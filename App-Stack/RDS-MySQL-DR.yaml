@@ -1,0 +1,252 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create a highly available, scalable stack with a multi-AZ MySQL Amazon RDS database. Refer https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-rds-database-instance.html for more info.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: MySQL Cluster Configuration
+      Parameters:
+      - MySqlGlobalIdentifier
+      - PrimaryRegionKMSKeyArn
+    - Label:
+        default: MySQL VPC Network and Security Configuration
+      Parameters:
+      - SubnetIds
+      - DBSecurityGroup
+    ParameterLabels:
+      MySqlGlobalIdentifier:
+        default: Enter the MySQL Global Database Name (Required)
+      PrimaryRegionKMSKeyArn:
+        default: Enter the ARN of Primary Region KMS Key used for RDS instance
+      SubnetIds:
+        default: Enter DB Subnets for Subnet Group Creation (Required)
+      DBSecurityGroup:
+        default: Enter DB Security Group (Required)
+      DBPortNumber:
+        default: Enter DB Port (Required)
+Parameters:
+  SubnetIds:
+    Description:
+        Subnet for VPC Subnet Group.
+    Type: List<AWS::EC2::Subnet::Id> 
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    AllowedPattern: "^sg-[a-z0-9]*$"
+    Description: Choose a Security Group ID
+  MySqlGlobalIdentifier:
+    Description: MySQL database name
+    Type: String
+  PrimaryRegionKMSKeyArn:
+    Description: Enter the ARN of Primary Region KMS Key used for RDS instance
+    Type: String
+  DBPortNumber:
+    Description: The port of the database
+    Type: Number
+  DBAllocatedStorage:
+    Default: '100'
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 5 and 1024Gb.
+  DBInstanceClass:
+    Description: The database instance type
+    Type: String
+    Default: db.m5.large
+    AllowedValues:
+      - db.m5.medium
+      - db.m5.large
+      - db.m6.xlarge
+    ConstraintDescription: must select a valid database instance type.
+  DBStorageType:
+    Default: "io1"
+    Description: Specifies the storage type to be associated with the DB instance. Valid values (standard | gp2 | io1)
+    Type: String
+    ConstraintDescription: must be either standard or gp2 or io1.
+  MultiAZDatabase:
+    Default: 'true'
+    Description: Create a ulti-AZ MySQL Amazon RDS database instance
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    ConstraintDescription: must be either true or false.
+  DeletionProtection:
+    Default: 'true'
+    Description: The database can't be deleted when deletion protection is enabled. By default, deletion protection is disabled.
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    ConstraintDescription: must be either true or false.
+  EnablePerformanceInsights:
+    Default: 'true'
+    Description: A value that indicates whether to enable Performance Insights for the DB instance
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    ConstraintDescription: must be either true or false.
+  PrimaryRegion:
+    Type: String
+    Description: Enter the Region that will be used for DR
+    AllowedValues:
+      - us-east-1
+      - us-west-2
+  SecondaryRegion:
+    Type: String
+    Description: Enter the Region that will be used for DR
+    AllowedValues:
+      - us-east-1
+      - us-west-2
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub ${AWS::StackName}-subnetgroup
+      DBSubnetGroupDescription: !Sub ${AWS::StackName}-Cache Subnet Group Redis 
+      SubnetIds:
+          Ref: SubnetIds
+
+  KMSReplicaKeyForRDS:
+    Type: 'AWS::KMS::ReplicaKey'
+    Properties:
+      Description: An example of a multi-Region primary key
+      PrimaryKeyArn: !Ref PrimaryRegionKMSKeyArn
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: rds-multi-region-kms-key
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: "kms:*"
+            Resource: "*"
+
+  SNSforRDSEvents:
+    Type: AWS::SNS::Topic
+    Properties: 
+      TopicName: !Sub '${MySqlGlobalIdentifier}-RDSEventsSNSTopic'
+
+  RDSClusterEventSubscription:
+    Type: AWS::RDS::EventSubscription
+    Properties:
+      SnsTopicArn: !Ref SNSforRDSEvents
+      SourceType: db-instance
+      SourceIds:
+        - !Ref MySQLDatabase
+      Enabled: true
+  
+  RDSPGEventSubscription:
+    Type: AWS::RDS::EventSubscription
+    Properties:
+      SnsTopicArn: !Ref SNSforRDSEvents
+      SourceType: db-parameter-group
+      Enabled: true
+  
+  RDSSGEventSubscription:
+    Type: AWS::RDS::EventSubscription
+    Properties:
+      SnsTopicArn: !Ref SNSforRDSEvents
+      SourceType: db-security-group
+      Enabled: true
+      
+  MySQLDatabase:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBInstanceIdentifier: !Sub '${MySqlGlobalIdentifier}-read-replica'
+      Port: !Ref DBPortNumber
+      SourceDBInstanceIdentifier: !Sub 'arn:aws:rds:${SecondaryRegion}:${AWS::AccountId}:db:${MySqlGlobalIdentifier}'
+      MultiAZ: !Ref MultiAZDatabase
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: !Ref DBStorageType
+      Iops: 3000
+      StorageEncrypted: true
+      PubliclyAccessible: false
+      KmsKeyId: !Ref KMSReplicaKeyForRDS
+      EnablePerformanceInsights: !Ref EnablePerformanceInsights
+      MonitoringInterval: 60
+      MonitoringRoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/rds-monitoring-role'
+      PerformanceInsightsRetentionPeriod: 7
+      DeletionProtection: !Ref DeletionProtection
+      SourceRegion: !Ref SecondaryRegion
+      AutoMinorVersionUpgrade: true
+      EnableIAMDatabaseAuthentication: true
+      BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: true
+      EnableCloudwatchLogsExports:
+        - error
+        - general
+        - slowquery
+        - audit      
+      DBSubnetGroupName:
+        Ref: DBSubnetGroup
+      VPCSecurityGroups:
+        - Ref: DBSecurityGroup
+
+Outputs:
+   MySQLInstanceARN:
+    Description: RDS MySQL Instance ARN
+    Value: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${MySqlGlobalIdentifier}-read-replica'
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-global-arn'
+   MySQLInstanceIdentifier:
+    Description: RDS MySQL Instance Identifier
+    Value: !Sub '${MySqlGlobalIdentifier}-read-replica'
+    Export:
+      Name: !Sub ${MySqlGlobalIdentifier}-identifier
+   MySQLSourceRDSInstanceIdentifier:
+    Description: RDS MySQL Instance Identifier
+    Value: !Sub ${MySqlGlobalIdentifier}
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-source-identifier'
+   MySQLSecrets:
+    Description: MySQL DB Credential Store
+    Value: !Sub
+      - dr/testing/${GlobalDBName}
+      - {GlobalDBName: !Ref MySqlGlobalIdentifier}
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-db-credentials'
+   MySQLKmsKeyId:
+    Description: RDS MySQL KMS Key Id
+    Value: !GetAtt KMSReplicaKeyForRDS.Arn
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-KmsKeyId'
+   MySQLDBPortNumber:
+    Description: RDS MySQL Instance Port No
+    Value: !Ref DBPortNumber
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-DBPortNumber'
+   MySQLDBInstanceClass:
+    Description: RDS MySQL Instance Class
+    Value: !Ref DBInstanceClass
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-DBInstanceClass'
+   MySQLDBSubnetGroup:
+    Description: RDS MySQL Subnet Group
+    Value: !Ref DBSubnetGroup
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-DBSubnetGroup'
+   MySQLDBSecurityGroup:
+    Description: RDS MySQL Security Group
+    Value: !Ref DBSecurityGroup
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-DBSecurityGroup'
+   MySQLMultiAZ:
+    Description: RDS MySQL Multi-AZ
+    Value: !Ref MultiAZDatabase
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-MultiAZ'
+   MySQLSourceRegion:
+    Description: RDS MySQL Instance Source Region
+    Value: !Ref SecondaryRegion
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-SourceRegion'
+   MySQLRDSMonitoringRoleARN:
+    Description: RDS MySQL Monitoring IAM Role
+    Value: !Sub 'arn:aws:iam::${AWS::AccountId}:role/rds-monitoring-role'
+    Export:
+      Name: !Sub '${MySqlGlobalIdentifier}-RDSMonitoringRole'

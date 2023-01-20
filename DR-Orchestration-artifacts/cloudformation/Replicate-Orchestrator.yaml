@@ -1,0 +1,146 @@
+---
+Description: This template is to produce a stepfunction that orchestrates the resource health checks.
+Parameters:
+  LambdaSendTaskTokenName:
+    Type: String
+  LambdaSendTaskTokenArn:
+    Type: String
+  StepFunctionRDSCreateReadReplicaArn:
+    Type: String
+  StepFunctionCreateAuroraDBClusterArn:
+    Type: String
+    
+Resources:
+  IAMStepFunctionExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Following least priviledges; for xray, it supports all resources"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "states.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - lambda:InvokeFunction
+                Resource: 
+                  - !Ref LambdaSendTaskTokenArn
+              - Effect: Allow
+                Action:
+                  - "states:StartExecution"
+                  - "states:DescribeExecution"
+                  - "states:StopExecution"
+                Resource:
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:dr-orchestrator*:*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:dr-orchestrator*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:express:dr-orchestrator*:*:*"
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+
+  StepFunctionOrchestrateReplicate:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: dr-orchestrator-jk-stepfunction-REPLICATE
+      RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "Orchestrate Activate Stepfunction",
+            "StartAt": "Layers",
+            "States": {
+              "Layers": {
+                "Type": "Map",
+                "Iterator": {
+                  "StartAt": "Resources",
+                  "States": {
+                    "Resources": {
+                      "Type": "Map",
+                      "End": true,
+                      "Iterator": {
+                        "StartAt": "ResourceType",
+                        "States": {
+                          "ResourceType": {
+                            "Type": "Choice",
+                            "Choices": [
+                              {
+                                "Variable": "$.StatePayload.resourceType",
+                                "StringEquals": "CreateRDSMySQLReadReplica",
+                                "Next": "CreateRDSMySQLReadReplica"
+                              },
+                              {
+                                "Variable": "$.StatePayload.resourceType",
+                                "StringEquals": "CreateAuroraSecondaryDBCluster",
+                                "Next": "CreateAuroraSecondaryDBCluster"
+                              }                              
+                            ],
+                            "Default": "No-Ops"
+                          },
+                          "CreateRDSMySQLReadReplica": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
+                            "Parameters": {
+                              "StateMachineArn": "${StepFunctionRDSCreateReadReplicaArn}",
+                              "Input": {
+                                "TaskToken.$": "$$.Task.Token",
+                                "StatePayload.$": "$.StatePayload"
+                              }
+                            },
+                            "End": true,
+                            "InputPath": "$",
+                            "ResultPath": "$.output"
+                          },
+                          "CreateAuroraSecondaryDBCluster": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
+                            "Parameters": {
+                              "StateMachineArn": "${StepFunctionCreateAuroraDBClusterArn}",
+                              "Input": {
+                                "TaskToken.$": "$$.Task.Token",
+                                "StatePayload.$": "$.StatePayload"
+                              }
+                            },
+                            "End": true,
+                            "InputPath": "$",
+                            "ResultPath": "$.output"
+                          },                          
+                          "No-Ops": {
+                            "Type": "Pass",
+                            "End": true
+                          }
+                        }
+                      },
+                      "ItemsPath": "$.StatePayload.resources",
+                      "Parameters": {
+                        "StatePayload.$": "$$.Map.Item.Value"
+                      }
+                    }
+                  }
+                },
+                "ItemsPath": "$.StatePayload",
+                "Parameters": {
+                  "StatePayload.$": "$$.Map.Item.Value"
+                },
+                "MaxConcurrency": 1,
+                "End": true
+              }
+            }
+          }
+         
+Outputs:
+  StepFunctionOrchestrateReplicateArn:
+    Value: !GetAtt StepFunctionOrchestrateReplicate.Arn

@@ -1,0 +1,22 @@
+[
+    {
+         "ParameterKey": "TemplateStoreS3BucketName",
+         "ParameterValue": "dr-orchestrator-xxxxxx-us-west-2"
+    },
+    {
+        "ParameterKey": "TemplateVPCId",
+        "ParameterValue": "vpc-xxxxxx"
+    },    
+    {
+        "ParameterKey": "TemplateLambdaSubnetID1",
+        "ParameterValue": "subnet1-xxxxxx"
+    },
+    {
+        "ParameterKey": "TemplateLambdaSubnetID2",
+        "ParameterValue": "subnet2-xxxxxx"
+    },
+    {
+        "ParameterKey": "TemplateLambdaSecurityGroupID",
+        "ParameterValue": "sg-xxxxxxxxxx"
+    }
+ ]

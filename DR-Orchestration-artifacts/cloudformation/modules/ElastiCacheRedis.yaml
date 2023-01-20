@@ -1,0 +1,330 @@
+---
+Description: The stack will create the resources like IAM, Lambda and Step Functions to Failover ElastiCache for Redis - Global Datastore Template
+Parameters:
+  LambdaSendTaskTokenName:
+    Type: String
+  LambdaSendTaskTokenArn:
+    Type: String
+  LambdaGetExportsValueArn:
+    Type: String
+  LambdaSecurityGroupID:
+    Type: String
+  LambdaSubnetID1:
+    Type: String
+  LambdaSubnetID2:
+    Type: String
+  LambdaDLQArn:
+    Type: String
+
+Resources:
+  IAMStepFunctionExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Description: "Following least priviledges; for X-Ray it supports all resources"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "states.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - lambda:InvokeFunction
+                Resource: 
+                  - !GetAtt LambdaFailoverElastiCacheRedis.Arn
+                  - !GetAtt LambdaCheckElastiCacheRedisStatus.Arn
+                  - !Ref LambdaSendTaskTokenArn
+                  - !Ref LambdaGetExportsValueArn
+              - Effect: Allow
+                Action:
+                  - "states:StartExecution"
+                  - "states:DescribeExecution"
+                  - "states:StopExecution"
+                Resource: 
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution::dr-orchestrator-jk-stepfunction-Redis-failover:*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine::dr-orchestrator-jk-stepfunction-Redis-failover"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:express::dr-orchestrator-jk-stepfunction-Redis-failover:*:*"
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+
+  IAMLambdaFailoverElastiCacheRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any ElastiCache in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "elasticache:DescribeGlobalReplicationGroups"
+                  - "elasticache:FailoverGlobalReplicationGroup"
+                Resource: !Sub "arn:aws:elasticache::${AWS::AccountId}:globalreplicationgroup:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  IAMLambdaDescGlobalRepGroupRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any ElastiCache in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "elasticache:DescribeGlobalReplicationGroups"
+                Resource: !Sub "arn:aws:elasticache::${AWS::AccountId}:globalreplicationgroup:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LambdaFailoverElastiCacheRedis:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-failover-ElastiCacheRedis
+      Description: !Sub 'Lambda function to failover Redis Global Datastore'
+      Handler: index.lambda_handler
+      Architectures: 
+        - "x86_64"
+      Role: !GetAtt "IAMLambdaFailoverElastiCacheRole.Arn"
+      Code:
+        ZipFile: !Sub |
+          import json
+          import boto3
+          import botocore
+          from botocore.config import Config
+          import os
+              
+          def lambda_handler(event, context):
+            
+            print("Entering lambda_handler for lambda-failover-ElastiCacheRedis")
+            print(event)
+
+            client = boto3.client('elasticache')
+
+            try:
+              response = client.failover_global_replication_group(
+                GlobalReplicationGroupId = event["GlobalReplicationGroupId"],
+                PrimaryRegion = event["TargetRegion"],
+                PrimaryReplicationGroupId = event["TargetReplicationGroupId"]
+              )
+              print("failover_global_replication_group response = ", response)
+              
+              return {
+                  'statusCode' :200,
+                  'body' : json.dumps(response)
+              }
+              
+            except botocore.exceptions.ClientError as error:
+              print(f"Error occurred:", error)
+              raise error
+
+      Runtime: python3.9
+      ReservedConcurrentExecutions: 5
+      TracingConfig:
+        Mode: Active
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaFailoverElastiCacheRedisPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaFailoverElastiCacheRedis
+      Principal: !Ref 'AWS::AccountId'
+
+  LambdaCheckElastiCacheRedisStatus:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-check-Redis-failover-status
+      Description: !Sub 'Lambda function to check the status of Redis Global Datastore failover'
+      Handler: index.lambda_handler
+      Architectures: 
+        - "x86_64"
+      Role: !GetAtt "IAMLambdaDescGlobalRepGroupRole.Arn"
+      Code:
+        ZipFile: !Sub |
+            import json
+            import boto3
+            import botocore
+            from botocore.config import Config
+            import os
+
+            def lambda_handler(event, context):
+              
+              print("Entering lambda_handler for lambda-failover-ElastiCacheRedis")
+              print(event)
+
+              client = boto3.client('elasticache')
+             
+              try:
+                cluster = client.describe_global_replication_groups(GlobalReplicationGroupId = event["GlobalReplicationGroupId"])
+                print('describe_global_replication_groups respons = ', cluster)
+                return {
+                    'status': cluster["GlobalReplicationGroups"][0]["Status"]
+                  }
+                  
+              except botocore.exceptions.ClientError as error:
+                print(f"Error occurred:", error)
+                raise error
+
+      Runtime: python3.9
+      ReservedConcurrentExecutions: 5
+      TracingConfig:
+        Mode: Active
+      Timeout: 60    
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaCheckElastiCacheRedisStatusPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaCheckElastiCacheRedisStatus
+      Principal: !Ref 'AWS::AccountId'
+
+  StepFunctionElastiCacheRedisFailover:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: dr-orchestrator-jk-stepfunction-Redis-failover
+      RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "A description of my state machine",
+            "StartAt": "Resolve imports",
+            "States": {
+              "Resolve imports": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.StatePayload.parameters",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters",
+                  "FunctionName": "${LambdaGetExportsValueArn}"
+                },
+                "Next": "Failover Redis Global Datastore"
+              },
+              "Failover Redis Global Datastore": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.result",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaFailoverElastiCacheRedis}"
+                },
+                "Next": "Check Failover Status"
+              },
+              "Check Failover Status": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                },
+                "ResultPath": "$.failoverstatus",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckElastiCacheRedisStatus}"
+                },
+                "Next": "Is available?"
+              },
+              "Is available?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Not": {
+                      "Variable": "$.failoverstatus.Payload.status",
+                      "StringMatches": "available"
+                    },
+                    "Next": "Wait"
+                  }
+                ],
+                "Default": "Send success token"
+              },
+              "Wait": {
+                "Type": "Wait",
+                "Seconds": 15,
+                "Next": "Check Failover Status"
+              },
+              "Send success token": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${LambdaSendTaskTokenName}",
+                  "Payload": {
+                    "TaskToken.$": "$$.Execution.Input.TaskToken",
+                    "SfStartTime.$": "$$.Execution.StartTime",
+                    "resourceType.$": "$.StatePayload.resourceType",
+                    "resourceName.$": "$.StatePayload.resourceName"
+                  }
+                },
+                "ResultPath": "$.output",
+                "End": true
+              }
+            }
+          }
+Outputs:
+  StepFunctionElastiCacheRedisFailoverArn:
+    Value: !GetAtt StepFunctionElastiCacheRedisFailover.Arn

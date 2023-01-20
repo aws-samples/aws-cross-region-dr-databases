@@ -1,0 +1,15 @@
+{
+  "Parameters": {
+    "SubnetIds": "subnet1-xxxxxx,subnet2-xxxxxx",
+    "DBSecurityGroup": "sg-xxxxxxxxxx",
+    "GlobalClusterIdentifier":"dr-globaldb-cluster-mysql",
+    "DBClusterName":"dbcluster-01",
+    "SourceDBClusterName":"dbcluster-02",
+    "DBPortNumber": "3787",
+    "DBInstanceClass":"db.r5.large",
+    "InitialDatabaseName": "sampledb",
+    "PrimaryRegion": "us-east-1",
+    "SecondaryRegion": "us-west-2",
+    "KMSKeyAliasName": "rds/dr-globaldb-cluster-mysql-KmsKeyId"
+  }
+}

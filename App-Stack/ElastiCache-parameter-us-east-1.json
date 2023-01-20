@@ -1,0 +1,17 @@
+{
+  "Parameters": {
+    "CacheNodeType": "cache.m5.large",
+    "DBSecurityGroup": "sg-xxxxxxxxxx",
+    "SubnetIds": "subnet1-xxxxxx,subnet2-xxxxxx",
+    "EngineVersion": "5.0.6",
+    "GlobalReplicationGroupIdSuffix": "demo-redis-global-datastore",
+    "NumReplicas": "1",
+    "NumShards": "1",
+    "ReplicationGroupId": "demo-redis-cluster",
+    "DBPortNumber": "3788",
+    "TransitEncryption": "true",
+    "KMSKeyAliasName": "elasticache/demo-redis-global-datastore-KmsKeyId",
+    "PrimaryRegion": "us-east-1",
+    "SecondaryRegion": "us-west-2"
+  }
+}

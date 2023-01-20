@@ -1,0 +1,300 @@
+---
+Description: Template to deploy all the utility functions for orchestration
+Parameters:
+  TemplateVPCId:
+    Type: String
+  LambdaSecurityGroupID:
+    Type: String
+  LambdaSubnetID1:
+    Type: String
+  LambdaSubnetID2:
+    Type: String
+
+Resources:
+  vpcInterfaceEnpointRDS:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.rds'
+      VpcId: !Ref TemplateVPCId
+      PrivateDnsEnabled: True
+      SubnetIds: 
+        - !Ref LambdaSubnetID1
+        - !Ref LambdaSubnetID2
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroupID
+
+  vpcInterfaceEnpointElastiCache:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.elasticache'
+      VpcId: !Ref TemplateVPCId
+      PrivateDnsEnabled: True
+      SubnetIds: 
+        - !Ref LambdaSubnetID1
+        - !Ref LambdaSubnetID2
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroupID
+
+  vpcInterfaceEnpointStepFunction:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.states'
+      VpcId: !Ref TemplateVPCId
+      PrivateDnsEnabled: True
+      SubnetIds: 
+        - !Ref LambdaSubnetID1
+        - !Ref LambdaSubnetID2
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroupID
+
+  vpcInterfaceEnpointCFT:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.cloudformation'
+      VpcId: !Ref TemplateVPCId
+      PrivateDnsEnabled: True
+      SubnetIds: 
+        - !Ref LambdaSubnetID1
+        - !Ref LambdaSubnetID2
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroupID
+
+  IAMSendSuccessTokenRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Following least priviledges; for SendTaskSuccess and SendTaskFailure, it supports all resources"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "states:SendTaskSuccess"
+                  - "states:SendTaskFailure"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+  SQSDeadLetterQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: "LambdaDeadLetterQueue"
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  LambdaSendSuccessToken:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-send-success-token
+      Handler: "index.lambda_handler"
+      Role: !GetAtt "IAMSendSuccessTokenRole.Arn"
+      Runtime: "python3.9"
+      ReservedConcurrentExecutions: 1
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:017000801446:layer:AWSLambdaPowertoolsPython:11
+      Timeout: 25
+      DeadLetterConfig:
+        TargetArn: !GetAtt "SQSDeadLetterQueue.Arn"
+      Code:
+        ZipFile:
+          Fn::Sub: |
+            import boto3
+            import logging
+            import datetime
+            import os
+            from datetime import timezone
+            from aws_lambda_powertools.logging import Logger
+            logger = Logger()
+
+            step_functions = boto3.client('stepfunctions')
+
+            @logger.inject_lambda_context()
+            def lambda_handler(event, context):
+              task_token = event.get("TaskToken")
+              sf_starttime = datetime.datetime.fromisoformat(event.get('SfStartTime',"1999-01-01T00:00:00.000Z").replace('Z', '+00:00'))
+              sf_endtime = datetime.datetime.now(timezone.utc)
+              sf_timetocomplete = sf_endtime-sf_starttime
+              logger_fields= {
+                  "lifeCyclePhase": event.get("lifeCyclePhase",""),
+                  "Product": event.get("Product",""),
+                  "ApplicationName": event.get("AppName",""),
+                  "resourceName": event.get("resourceName",""),
+                  "resourceType": event.get("resourceType",""),
+                  "RTO":sf_timetocomplete
+                }
+
+              logger.info("Module executed successfully", extra=logger_fields)
+              step_functions.send_task_success(
+                    taskToken=task_token,
+                    output='{"status":"success"}'
+                )
+
+  LambdaSendSuccessTokenPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaSendSuccessToken
+      Principal: !Ref 'AWS::AccountId'
+
+  IAMListCFTExportValuesRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Following least priviledges; for ListExports, it supports all resources"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "cloudformation:ListExports"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LamdbaGetExportValues:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-get-exports-value
+      Handler: "index.lambda_handler"
+      Role: !GetAtt "IAMListCFTExportValuesRole.Arn"
+      Runtime: "python3.9"
+      Timeout: 25
+      ReservedConcurrentExecutions: 5
+      DeadLetterConfig:
+        TargetArn: !GetAtt "SQSDeadLetterQueue.Arn"
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+      Code:
+        ZipFile: !Sub |
+          import os
+          from typing import Any, Dict, List
+
+          import json
+          import boto3
+
+          def call_api_cfg_export():
+              """Return a cloudformation export."""
+              print(f"calling boto3 api to get cft_eports")
+              cfn_client = boto3.client('cloudformation' )
+              exports = cfn_client.list_exports()
+              export_all = exports.get('Exports')
+              hasNextToken = exports.get('NextToken')
+              #Adding counter variable to avoid infinite loops
+              cnt=1
+              while (str(hasNextToken) != 'None' and cnt <=100):
+                  cnt=cnt+1
+                  print(f"looing inside cft_eports, cnt =: {cnt}")
+                  exports = cfn_client.list_exports(NextToken=str(hasNextToken))
+                  hasNextToken = exports.get('NextToken')
+                  export_next = exports.get('Exports')
+                  export_all=export_all+export_next
+                  print(f"checking hasNextToken in while loop value: {hasNextToken}")
+              return  export_all
+
+          def get_cft_export_name(exports_final: list, exportname: str = "example") -> str:
+              print(f"looking for the import variable of: {exportname}")
+              for export in exports_final:
+                  if exportname == export.get("Name"):
+                      return export["Value"]
+
+          def get_ssm_parameter(path: str = "example") -> str:
+              """Return a SSM parameter."""
+              print(f"get_ssm_parameter: {path}")
+
+              ssm_client = boto3.client('ssm')
+              # WithDecrypion is ignored if we are pulling a non Secure value
+              result = ssm_client.get_parameter(Name=path, WithDecryption=True)
+              return result.get("Parameter", {}).get("Value")
+
+          def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
+              """Handle the lambda invocation for returning parameters."""
+              print("Entering the main lambda handler")
+              print(event)
+
+
+              api_lookup_required=True
+              for key, value in event.items():
+                  if value.startswith("!Import"):
+                      print("CFN export")
+                      if api_lookup_required:
+                          print(f"First import variable calling boto3 api: {api_lookup_required}")
+                          exports_final = call_api_cfg_export()
+                          api_lookup_required=False
+                      print(f"Check next import value")
+                      event[key] = get_cft_export_name(exports_final, value.split(" ")[1])
+                  elif value.startswith("resolve:ssm"):
+                      print("SSM parameter store")
+                      split_value = value.split(":")
+                      path = split_value[2]
+                      if len(split_value) > 3:
+                          path = f"{path}:{split_value[3]}"
+                      event[key] = get_ssm_parameter(path)
+              print(event)
+              return event
+
+  LamdbaGetExportValuesPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LamdbaGetExportValues
+      Principal: !Ref 'AWS::AccountId'
+
+Outputs:
+  LambdaSendTaskTokenArn:
+    Value: !GetAtt LambdaSendSuccessToken.Arn
+  LambdaSendTaskTokenName:
+    Value: !Ref LambdaSendSuccessToken
+  LambdaGetExportsValueName:
+    Value: !Ref LamdbaGetExportValues
+  LambdaGetExportsValueArn:
+    Value: !GetAtt LamdbaGetExportValues.Arn
+  LambdaDLQArn:
+    Value: !GetAtt SQSDeadLetterQueue.Arn

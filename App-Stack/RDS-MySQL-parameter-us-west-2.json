@@ -1,0 +1,13 @@
+{
+  "Parameters": {
+    "SubnetIds": "subnet1-xxxxxx,subnet2-xxxxxx",
+    "DBSecurityGroup": "sg-xxxxxxxxxx",
+    "MySqlGlobalIdentifier":"rds-mysql-instance",
+    "InitialDatabaseName": "mysqldb",
+    "DBPortNumber": "3789",
+    "PrimaryRegion": "us-west-2",
+    "SecondaryRegion": "us-east-1",
+    "KMSKeyAliasName": "rds/rds-mysql-instance-KmsKeyId",
+    "PrimaryRegionKMSKeyArn":"arn:aws:kms:us-east-1:xxxxxx:key/mrk-xxxxxxxxxx"
+  }
+}
