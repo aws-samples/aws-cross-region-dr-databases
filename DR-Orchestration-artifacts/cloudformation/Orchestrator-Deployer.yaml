@@ -1,0 +1,124 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  TemplateStoreS3BucketName:
+    Type: String
+  TemplateVPCId:
+    Type: String    
+  TemplateLambdaSecurityGroupID:
+    Type: String
+  TemplateLambdaSubnetID1:
+    Type: String
+  TemplateLambdaSubnetID2:
+    Type: String
+
+Resources:
+  UtilityFunctionsStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/Utility-Functions.yaml"
+      Parameters:
+        LambdaSecurityGroupID:
+          !Ref TemplateLambdaSecurityGroupID
+        LambdaSubnetID1:
+          !Ref TemplateLambdaSubnetID1
+        LambdaSubnetID2:
+          !Ref TemplateLambdaSubnetID2
+        TemplateVPCId:
+          !Ref TemplateVPCId
+
+  RDSModuleStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/modules/RDS.yaml"
+      Parameters:
+        LambdaSendTaskTokenArn:
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenArn
+        LambdaSendTaskTokenName:
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenName
+        LambdaGetExportsValueArn:
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaGetExportsValueArn
+        S3CodeBucketName:
+          !Ref TemplateStoreS3BucketName
+        LambdaSecurityGroupID:
+          !Ref TemplateLambdaSecurityGroupID
+        LambdaSubnetID1:
+          !Ref TemplateLambdaSubnetID1
+        LambdaSubnetID2:
+          !Ref TemplateLambdaSubnetID2
+        LambdaDLQArn:
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaDLQArn
+
+  ElastiCacheRedisModuleStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/modules/ElastiCacheRedis.yaml"
+      Parameters:
+        LambdaSendTaskTokenArn: 
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenArn
+        LambdaSendTaskTokenName: 
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenName
+        LambdaGetExportsValueArn:
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaGetExportsValueArn
+        LambdaSecurityGroupID:
+          !Ref TemplateLambdaSecurityGroupID
+        LambdaSubnetID1:
+          !Ref TemplateLambdaSubnetID1
+        LambdaSubnetID2:
+          !Ref TemplateLambdaSubnetID2
+        LambdaDLQArn:
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaDLQArn
+
+  AuroraModuleStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/modules/Aurora.yaml"
+      Parameters:
+        LambdaSendTaskTokenArn: 
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenArn
+        LambdaSendTaskTokenName: 
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenName
+        LambdaGetExportsValueArn:
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaGetExportsValueArn
+        S3CodeBucketName:
+          !Ref TemplateStoreS3BucketName
+        LambdaSecurityGroupID:
+          !Ref TemplateLambdaSecurityGroupID
+        LambdaSubnetID1:
+          !Ref TemplateLambdaSubnetID1
+        LambdaSubnetID2:
+          !Ref TemplateLambdaSubnetID2
+        LambdaDLQArn:
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaDLQArn
+
+  ActivateOrchestratorStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/Activate-Orchestrator.yaml"  
+      Parameters:  
+        LambdaSendTaskTokenArn: 
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenArn      
+        LambdaSendTaskTokenName: 
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenName 
+        StepFunctionElastiCacheRedisFailoverArn:
+          !GetAtt ElastiCacheRedisModuleStack.Outputs.StepFunctionElastiCacheRedisFailoverArn
+        StepFunctionRDSFailoverArn:
+          !GetAtt RDSModuleStack.Outputs.StepFunctionRDSFailoverArn
+        StepFunctionPlannedAuroraFailoverArn:
+          !GetAtt AuroraModuleStack.Outputs.StepFunctionPlannedAuroraFailoverArn
+        StepFunctionUnPlannedAuroraFailoverArn:
+          !GetAtt AuroraModuleStack.Outputs.StepFunctionUnPlannedAuroraFailoverArn
+
+  ReplicateOrchestratorStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/Replicate-Orchestrator.yaml"
+      Parameters:  
+        LambdaSendTaskTokenArn: 
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenArn
+        LambdaSendTaskTokenName: 
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenName
+        StepFunctionRDSCreateReadReplicaArn:
+          !GetAtt RDSModuleStack.Outputs.StepFunctionRDSCreateReadReplicaArn
+        StepFunctionCreateAuroraDBClusterArn:
+          !GetAtt AuroraModuleStack.Outputs.StepFunctionCreateAuroraDBClusterArn

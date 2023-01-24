@@ -1,0 +1,188 @@
+---
+Description: This template is to produce a stepfunction that orchestrates the resource health checks.
+Parameters:
+  LambdaSendTaskTokenName:
+    Type: String
+  LambdaSendTaskTokenArn:
+    Type: String
+  StepFunctionElastiCacheRedisFailoverArn:
+    Type: String
+  StepFunctionRDSFailoverArn:
+    Type: String
+  StepFunctionPlannedAuroraFailoverArn:
+    Type: String
+  StepFunctionUnPlannedAuroraFailoverArn:
+    Type: String
+
+Resources:
+  IAMStepFunctionExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Description: "Following least priviledges; for X-Ray it supports all resources."
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "states.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - lambda:InvokeFunction
+                Resource: 
+                  - !Ref LambdaSendTaskTokenArn
+              - Effect: Allow
+                Action:
+                  - "states:StartExecution"
+                  - "states:DescribeExecution"
+                  - "states:StopExecution"
+                Resource:
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:dr-orchestrator*:*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:dr-orchestrator*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:express:dr-orchestrator*:*:*"
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+  StepFunctionOrchestrateActivate:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: dr-orchestrator-jk-stepfunction-ACTIVATE
+      RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "Orchestrate Activate Stepfunction",
+            "StartAt": "Layers",
+            "States": {
+              "Layers": {
+                "Type": "Map",
+                "Iterator": {
+                  "StartAt": "Resources",
+                  "States": {
+                    "Resources": {
+                      "Type": "Map",
+                      "End": true,
+                      "Iterator": {
+                        "StartAt": "ResourceType",
+                        "States": {
+                          "ResourceType": {
+                            "Type": "Choice",
+                            "Choices": [
+                              {
+                                "Variable": "$.StatePayload.resourceType",
+                                "StringEquals": "FailoverElastiCacheCluster",
+                                "Next": "FailoverElastiCacheCluster"
+                              },
+                              {
+                                "Variable": "$.StatePayload.resourceType",
+                                "StringEquals": "PlannedFailoverAuroraMySQL",
+                                "Next": "PlannedFailoverAuroraMySQL"
+                              },
+                             {
+                                "Variable": "$.StatePayload.resourceType",
+                                "StringEquals": "UnPlannedFailoverAuroraMySQL",
+                                "Next": "UnPlannedFailoverAuroraMySQL"
+                              },                              
+                              {
+                                "Variable": "$.StatePayload.resourceType",
+                                "StringEquals": "PromoteRDSMySQLReadReplica",
+                                "Next": "PromoteRDSMySQLReadReplica"
+                              }
+                            ],
+                            "Default": "No-Ops"
+                          },
+                          "PlannedFailoverAuroraMySQL": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
+                            "Parameters": {
+                              "StateMachineArn": "${StepFunctionPlannedAuroraFailoverArn}",
+                              "Input": {
+                                "TaskToken.$": "$$.Task.Token",
+                                "StatePayload.$": "$.StatePayload"
+                              }
+                            },
+                            "End": true,
+                            "InputPath": "$",
+                            "ResultPath": "$.output"
+                          },
+                          "UnPlannedFailoverAuroraMySQL": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
+                            "Parameters": {
+                              "StateMachineArn": "${StepFunctionUnPlannedAuroraFailoverArn}",
+                              "Input": {
+                                "TaskToken.$": "$$.Task.Token",
+                                "StatePayload.$": "$.StatePayload"
+                              }
+                            },
+                            "End": true,
+                            "InputPath": "$",
+                            "ResultPath": "$.output"
+                          },                          
+                          "PromoteRDSMySQLReadReplica": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
+                            "Parameters": {
+                              "StateMachineArn": "${StepFunctionRDSFailoverArn}",
+                              "Input": {
+                                "TaskToken.$": "$$.Task.Token",
+                                "StatePayload.$": "$.StatePayload"
+                              }
+                            },
+                            "End": true,
+                            "InputPath": "$",
+                            "ResultPath": "$.output"
+                          },
+                          "FailoverElastiCacheCluster": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
+                            "Parameters": {
+                              "StateMachineArn": "${StepFunctionElastiCacheRedisFailoverArn}",
+                              "Input": {
+                                "TaskToken.$": "$$.Task.Token",
+                                "StatePayload.$": "$.StatePayload"
+                              }
+                            },
+                            "End": true,
+                            "InputPath": "$",
+                            "ResultPath": "$.output"
+                          },
+                          "No-Ops": {
+                            "Type": "Pass",
+                            "End": true
+                          }
+                        }
+                      },
+                      "ItemsPath": "$.StatePayload.resources",
+                      "Parameters": {
+                        "StatePayload.$": "$$.Map.Item.Value"
+                      }
+                    }
+                  }
+                },
+                "ItemsPath": "$.StatePayload",
+                "Parameters": {
+                  "StatePayload.$": "$$.Map.Item.Value"
+                },
+                "MaxConcurrency": 1,
+                "End": true
+              }
+            }
+          }
+
+ 
+Outputs:
+  StepFunctionOrchestrateActivateArn:
+    Value: !GetAtt StepFunctionOrchestrateActivate.Arn

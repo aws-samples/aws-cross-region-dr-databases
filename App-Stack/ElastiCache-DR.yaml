@@ -1,0 +1,139 @@
+---
+Description: Template to create ElastiCache Redis, refer https://github.com/widdix/aws-cf-templates/blob/master/state/elasticache-redis.yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Amazon VPC Network and Security Configuration
+      Parameters:
+      - SubnetIds
+      - DBSecurityGroup
+      - ReplicationGroupId
+      - GlobalReplicationGroupIdSuffix
+      - PrimaryRegionKMSKeyArn
+    ParameterLabels:
+      SubnetIds:
+        default: Enter DB Subnets for Subnet Group Creation (Required)
+      DBSecurityGroup:
+        default: Enter DB Security Group (Required)
+      ReplicationGroupId:
+        default: Enter ReplicationGroupId (Required)
+      GlobalReplicationGroupIdSuffix:
+        default: Enter GlobalReplicationGroupIdSuffix (Required)
+      PrimaryRegionKMSKeyArn:
+        default: Enter the ARN of Primary Region KMS Key used for RDS instance
+      DBPortNumber:
+        default: Enter DB Port (Required)
+Parameters:
+  SubnetIds:
+    Description:
+        Subnet for VPC Subnet Group.
+    Type: List<AWS::EC2::Subnet::Id> 
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    AllowedPattern: "^sg-[a-z0-9]*$"
+    Description: Choose a DB Security Group ID based on the VPC of your ElastiCache for Redis DB
+  ReplicationGroupId:
+    Type: "String"
+    Description: The replication group identifier. This parameter is stored as a lowercase string.    
+  GlobalReplicationGroupIdSuffix:
+    Type: "String"    
+    Description: The suffix name of a Global Datastore. The suffix guarantees uniqueness of the Global Datastore name across multiple regions  
+  PrimaryRegionKMSKeyArn:
+    Description: Enter the ARN of Primary Region KMS Key used for ElastiCache
+    Type: String
+  TransitEncryption:
+    Description: 'Enable encryption for data in transit? (see https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/in-transit-encryption.html)'
+    Type: 'String'
+    Default: 'true'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  AuthToken:
+    NoEcho: true
+    Description: 'Optional password (16 to 128 characters) used to authenticate against Redis (requires TransitEncryption := true; leave blank to disable password-protection).'
+    Type: 'String'
+    Default: ''
+    MaxLength: 128
+  MultipleShardsinPrimary:
+    AllowedValues: [true, false]
+    Type: String
+    Description: Set to true in case of shard count > 1 in Primary Cluster
+    Default: false
+  NumCacheClusters:
+    Description: 'If AutomaticFailoverEnabled is true, the value of this parameter must be at least 2, Ignored if more than one shard'
+    Type: 'Number'
+    Default: 2
+  DBPortNumber:
+    Description: The port of the database
+    Type: Number
+
+Conditions:
+  HasAuthToken: !Not [!Equals [!Ref AuthToken, '']]
+  UsingMultipleShards: !Equals [!Ref MultipleShardsinPrimary, 'true'] 
+  
+
+Resources:
+  KMSReplicaKeyForElastiCache:
+    Type: 'AWS::KMS::ReplicaKey'
+    Properties:
+      Description: An example of a multi-Region primary key
+      PrimaryKeyArn: !Ref PrimaryRegionKMSKeyArn
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: rds-multi-region-kms-key
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: "kms:*"
+            Resource: "*"
+
+  SubnetGroup:
+    Type: 'AWS::ElastiCache::SubnetGroup'
+    Properties:
+      CacheSubnetGroupName: !Sub ${AWS::StackName}-subnetgroup
+      Description: !Sub ${AWS::StackName}-Cache Subnet Group Redis 
+      SubnetIds:
+          Ref: SubnetIds
+  
+  ReplicationGroup:
+    Type: 'AWS::ElastiCache::ReplicationGroup'
+    Properties:
+      ReplicationGroupDescription: 'Elastic Cache Redis Cluster Replication Group used for Demo global datastore'
+      Port: !Ref DBPortNumber
+      #AtRestEncryptionEnabled: true
+      AuthToken: 
+        Fn::Sub: "{{resolve:secretsmanager:${GlobalReplicationGroupIdSuffix}:SecretString:password}}"
+      MultiAZEnabled: True
+      CacheSubnetGroupName: !Ref SubnetGroup
+      GlobalReplicationGroupId: !Sub ldgnf-${GlobalReplicationGroupIdSuffix}
+      ReplicationGroupId: !Sub ${ReplicationGroupId}-secondary
+      NumCacheClusters: !If [UsingMultipleShards, !Ref "AWS::NoValue",!Ref NumCacheClusters] 
+      SecurityGroupIds:
+      - !Ref DBSecurityGroup
+      #TransitEncryptionEnabled: !Ref TransitEncryption
+  
+Outputs:
+  RedisTargetClusterIdentifier:
+    Description: ElastiCashe Redis Cluster Identifier
+    Value: !Ref ReplicationGroup
+    Export:
+      Name: !Sub '${ReplicationGroupId}-target-replication-group-id'
+  RedisPortNumber:
+    Description: ElastiCashe Redis Port No
+    Value: !Ref DBPortNumber
+    Export:
+      Name: !Sub '${ReplicationGroupId}-port-no'
+  RedisGlobalDataStoreIdentifier:
+    Description: Redis Global Data Store Identifier
+    Value: !Sub ldgnf-${GlobalReplicationGroupIdSuffix}
+    Export:
+      Name: !Sub '${ReplicationGroupId}-global-replication-group-id'
+  RedisClusterRegion:
+    Description: Redis Cluster Region
+    Value: !Sub ${AWS::Region}
+    Export:
+      Name: !Sub '${ReplicationGroupId}-target-region'

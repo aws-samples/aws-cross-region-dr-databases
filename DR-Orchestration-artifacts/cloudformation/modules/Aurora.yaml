@@ -1,0 +1,918 @@
+---
+Description: Lambda to Failover Global Database Template
+Parameters:
+  LambdaSendTaskTokenName:
+    Type: String
+  LambdaSendTaskTokenArn:
+    Type: String
+  LambdaGetExportsValueArn:
+    Type: String
+  S3CodeBucketName:
+    Type: String
+  AuroraCreateDBClusterLambdaFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/aurora-create-db-cluster.zip'
+  AuroraRemoveFromClusterFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/aurora-remove-from-global-cluster.zip'
+  AuroraFailoverDBClusterFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/aurora-failover-global-db-cluster.zip'
+  AuroraCheckGlobalClusterStatusLambdaFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/aurora-check-global-db-cluster-status.zip'
+  AuroraCheckDBClusterStatusLambdaFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/aurora-check-db-cluster-status.zip'
+  AuroraDeleteDBClusterLambdaFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/aurora-delete-db-cluster.zip'
+  AuroraCheckDBInstanceLambdaFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/aurora-check-db-instance-status.zip'
+  LambdaSecurityGroupID:
+    Type: String
+  LambdaSubnetID1:
+    Type: String
+  LambdaSubnetID2:
+    Type: String
+  LambdaDLQArn:
+    Type: String
+    
+
+Resources:
+  IAMStepFunctionExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Description: "Following least priviledges; for X-Ray it supports all resources"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "states.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - lambda:InvokeFunction
+                Resource: 
+                  - !GetAtt LambdaRemoveFromAuroraGlobalCluster.Arn
+                  - !GetAtt LambdaFailoverAuroraGlobalDatabase.Arn
+                  - !GetAtt LambdaCheckAuroraGlobalDBClusterStatus.Arn
+                  - !GetAtt LambdaCheckAuroraDBClusterStatus.Arn
+                  - !GetAtt LambdaCreateAuroraDBCluster.Arn
+                  - !GetAtt LambdaDeleteAuroraDBCluster.Arn
+                  - !GetAtt LambdaCheckDBInstanceStatus.Arn
+                  - !Ref LambdaSendTaskTokenArn
+                  - !Ref LambdaGetExportsValueArn
+              - Effect: Allow
+                Action:
+                  - "states:StartExecution"
+                  - "states:DescribeExecution"
+                  - "states:StopExecution"
+                Resource: 
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:dr-orchestrator*:*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:dr-orchestrator*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:express:dr-orchestrator*:*:*"
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+ 
+  IAMLambdaDetachClusterRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any Aurora Global DB Cluster in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:RemoveFromGlobalCluster"
+                Resource: 
+                  - !Sub "arn:aws:rds::${AWS::AccountId}:global-cluster:*"
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LambdaRemoveFromAuroraGlobalCluster:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-remove-from-global-cuslter
+      Description: !Sub 'Lambda function to remove Aurora Cluster from Global Database'
+      Handler: aurora-remove-from-global-cluster.lambda_handler
+      Role: !GetAtt "IAMLambdaDetachClusterRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref AuroraRemoveFromClusterFunctionKey
+      Runtime: python3.9
+      ReservedConcurrentExecutions: 5
+      Timeout: 300
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaRemoveFromAuroraGlobalClusterPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaRemoveFromAuroraGlobalCluster
+      Principal: !Ref 'AWS::AccountId'
+
+  IAMLambdaFailoverAuroraGlobalDBRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any Aurora Global DB Cluster in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:FailoverGlobalCluster"
+                  - "rds:FailoverDBCluster"
+                Resource: 
+                  - !Sub "arn:aws:rds::${AWS::AccountId}:global-cluster:*"
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LambdaFailoverAuroraGlobalDatabase:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-failover-Aurora-GlobalDatabase
+      Description: !Sub 'Lambda function to remove Aurora Cluster from Global Database'
+      Handler: aurora-failover-global-db-cluster.lambda_handler
+      Role: !GetAtt "IAMLambdaFailoverAuroraGlobalDBRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref AuroraFailoverDBClusterFunctionKey
+      Runtime: python3.9
+      ReservedConcurrentExecutions: 5
+      Timeout: 120
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaFailoverAuroraGlobalDatabasePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaFailoverAuroraGlobalDatabase
+      Principal: !Ref 'AWS::AccountId'
+
+  IAMLambdaDescGlobalDBClusterRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any Aurora Global DB Cluster in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:DescribeGlobalClusters"
+                Resource: 
+                  - !Sub "arn:aws:rds::${AWS::AccountId}:global-cluster:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LambdaCheckAuroraGlobalDBClusterStatus:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-check-Aurora-global-cluster-status
+      Description: !Sub 'Lambda function to check Aurora Global DB Cluster Status'
+      Handler: aurora-check-global-db-cluster-status.lambda_handler
+      Role: !GetAtt "IAMLambdaDescGlobalDBClusterRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref AuroraCheckGlobalClusterStatusLambdaFunctionKey
+      Runtime: python3.9
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      TracingConfig:
+        Mode: Active   
+      ReservedConcurrentExecutions: 5
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaCheckAuroraGlobalDBClusterStatusPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaCheckAuroraGlobalDBClusterStatus
+      Principal: !Ref 'AWS::AccountId'
+
+  IAMLambdaDescDBClusterRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any Aurora Global DB Cluster in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:DescribeDBClusters"
+                Resource: 
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LambdaCheckAuroraDBClusterStatus:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-check-Aurora-db-cluster-status
+      Description: !Sub 'Lambda function to check Aurora DB Cluster Status'
+      Handler: aurora-check-db-cluster-status.lambda_handler
+      Role: !GetAtt "IAMLambdaDescDBClusterRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref AuroraCheckDBClusterStatusLambdaFunctionKey
+      Runtime: python3.9
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      TracingConfig:
+        Mode: Active   
+      ReservedConcurrentExecutions: 5
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaCheckAuroraDBClusterStatusPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaCheckAuroraDBClusterStatus
+      Principal: !Ref 'AWS::AccountId'
+
+  StepFunctionPlannedAuroraFailover:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: dr-orchestrator-jk-stepfunction-planned-Aurora-failover
+      RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "Step Function to Failover Aurora Global database",
+            "StartAt": "Resolve imports",
+            "States": {
+              "Resolve imports": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.StatePayload.parameters",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters",
+                  "FunctionName": "${LambdaGetExportsValueArn}"
+                },
+                "Next": "Failover Aurora Global Cluster"
+              },
+              "Failover Aurora Global Cluster": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.result",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaFailoverAuroraGlobalDatabase}"
+                },
+                "Next": "Check Failover Status"
+              },
+              "Check Failover Status": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                },
+                "ResultPath": "$.failoverstatus",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckAuroraDBClusterStatus}"
+                },
+                "Next": "Is available?"
+              },
+              "Is available?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Not": {
+                      "Variable": "$.failoverstatus.Payload.status",
+                      "StringMatches": "available"
+                    },
+                    "Next": "Wait"
+                  }
+                ],
+                "Default": "Send success token"
+              },
+              "Wait": {
+                "Type": "Wait",
+                "Seconds": 15,
+                "Next": "Check Failover Status"
+              },
+              "Send success token": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${LambdaSendTaskTokenName}",
+                  "Payload": {
+                    "TaskToken.$": "$$.Execution.Input.TaskToken",
+                    "SfStartTime.$": "$$.Execution.StartTime",
+                    "resourceType.$": "$.StatePayload.resourceType",
+                    "resourceName.$": "$.StatePayload.resourceName"
+                  }
+                },
+                "ResultPath": "$.output",
+                "End": true
+              }
+            }
+          }
+
+
+  StepFunctionUnPlannedAuroraFailover:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: dr-orchestrator-jk-stepfunction-unplanned-Aurora-failover
+      RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "Step Function to Failover Aurora Global database",
+            "StartAt": "Resolve imports",
+            "States": {
+              "Resolve imports": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.StatePayload.parameters",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters",
+                  "FunctionName": "${LambdaGetExportsValueArn}"
+                },
+                "Next": "Detach DB Cluster from Global DB"
+              },
+              "Detach DB Cluster from Global DB": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.result",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaRemoveFromAuroraGlobalCluster}"
+                },
+                "Next": "Check Detach Cluster Status"
+              },
+              "Check Detach Cluster Status": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                },
+                "ResultPath": "$.failoverstatus",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckAuroraDBClusterStatus}"
+                },
+                "Next": "Is available?"
+              },
+              "Is available?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Not": {
+                      "Variable": "$.failoverstatus.Payload.status",
+                      "StringMatches": "available"
+                    },
+                    "Next": "Wait"
+                  }
+                ],
+                "Default": "Send success token"
+              },
+              "Wait": {
+                "Type": "Wait",
+                "Seconds": 15,
+                "Next": "Check Detach Cluster Status"
+              },
+              "Send success token": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${LambdaSendTaskTokenName}",
+                  "Payload": {
+                    "TaskToken.$": "$$.Execution.Input.TaskToken",
+                    "SfStartTime.$": "$$.Execution.StartTime",
+                    "resourceType.$": "$.StatePayload.resourceType",
+                    "resourceName.$": "$.StatePayload.resourceName"
+                  }
+                },
+                "ResultPath": "$.output",
+                "End": true
+              }
+            }
+          }
+
+  IAMLambdaDeleteDBClusterRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any Aurora Global DB Cluster in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:DeleteGlobalCluster"
+                  - "rds:DeleteDBInstance"
+                  - "rds:DeleteDBCluster"
+                  - "rds:DescribeGlobalClusters"
+                  - "rds:DescribeDBClusters"
+                  - "rds:DescribeDBInstances"
+                  - "rds:RemoveFromGlobalCluster"
+                Resource: 
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*"
+                  - !Sub "arn:aws:rds::${AWS::AccountId}:global-cluster:*"
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:*"
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LambdaDeleteAuroraDBCluster:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-delete-aurora-db-cluster
+      Description: !Sub 'Lambda function to delete Aurora DB Cluster'
+      Handler: aurora-delete-db-cluster.lambda_handler
+      Role: !GetAtt "IAMLambdaDeleteDBClusterRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref AuroraDeleteDBClusterLambdaFunctionKey
+      Runtime: python3.9
+      TracingConfig:
+        Mode: Active
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      ReservedConcurrentExecutions: 5
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaDeleteAuroraDBClusterPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaDeleteAuroraDBCluster
+      Principal: !Ref 'AWS::AccountId'
+
+  IAMLambdaCreateDBClusterRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any Aurora Global DB Cluster in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:CreateDBCluster"
+                  - "rds:CreateDBInstance"
+                  - "rds:CreateGlobalCluster"
+                Resource: 
+                  - !Sub "arn:aws:rds:*:${AWS::AccountId}:og:*"
+                  - !Sub "arn:aws:rds:*:${AWS::AccountId}:subgrp:*"
+                  - !Sub "arn:aws:rds:*:${AWS::AccountId}:db:*"
+                  - !Sub "arn:aws:rds::${AWS::AccountId}:global-cluster:*"
+                  - !Sub "arn:aws:rds:*:${AWS::AccountId}:cluster:*"
+                  - !Sub "arn:aws:rds:*:${AWS::AccountId}:cluster-pg:*"
+                  - !Sub "arn:aws:rds:*:${AWS::AccountId}:cluster-snapshot:*"
+              - Effect: Allow
+                Action:
+                  - "kms:CreateGrant"
+                  - "kms:DescribeKey"
+                  - "kms:ListGrants"
+                Resource: 
+                  - !Sub "arn:aws:kms:*:${AWS::AccountId}:key/*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+              - Effect: Allow
+                Action:
+                  - "iam:PassRole"
+                Resource: 
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/rds-monitoring-role"
+
+  LambdaCreateAuroraDBCluster:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-create-aurora-db-cluster
+      Description: !Sub 'Lambda function to create Aurora DB Cluster'
+      Handler: aurora-create-db-cluster.lambda_handler
+      Role: !GetAtt "IAMLambdaCreateDBClusterRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref AuroraCreateDBClusterLambdaFunctionKey
+      Runtime: python3.9
+      TracingConfig:
+        Mode: Active      
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      ReservedConcurrentExecutions: 5
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaCreateAuroraDBClusterPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaCreateAuroraDBCluster
+      Principal: !Ref 'AWS::AccountId'
+
+  IAMLambdaCheckDBInstanceStatusRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any Aurora Global DB Cluster in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:DescribeDBInstances"
+                Resource: 
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LambdaCheckDBInstanceStatus:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-check-Aurora-db-instance-status
+      Description: !Sub 'Lambda function to check Aurora DB Instance Status'
+      Handler: aurora-check-db-instance-status.lambda_handler
+      Role: !GetAtt "IAMLambdaCheckDBInstanceStatusRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref AuroraCheckDBInstanceLambdaFunctionKey
+      Runtime: python3.9
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      TracingConfig:
+        Mode: Active   
+      ReservedConcurrentExecutions: 5
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+  
+  LambdaCheckDBInstanceStatusPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaCheckDBInstanceStatus
+      Principal: !Ref 'AWS::AccountId'
+
+  StepFunctionCreateAuroraDBCluster:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: dr-orchestrator-jk-stepfunction-create-Aurora-Secondary-cluster
+      RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "The step function will delete and create the Aurora Secondary DB Cluster",
+            "StartAt": "Resolve imports",
+            "States": {
+              "Resolve imports": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.StatePayload.parameters",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters",
+                  "FunctionName": "${LambdaGetExportsValueArn}"
+                },
+                "Next": "Check Aurora Cluster Exists"
+              },
+              "Check Aurora Cluster Exists": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckAuroraGlobalDBClusterStatus}"
+                },
+                "Retry": [
+                  {
+                    "ErrorEquals": [
+                      "Lambda.ServiceException",
+                      "Lambda.AWSLambdaException",
+                      "Lambda.SdkClientException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                  }
+                ],
+                "Next": "If exist?",
+                "ResultPath": "$.rdsstatus",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                }
+              },
+              "If exist?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.rdsstatus.Payload.status",
+                    "StringEquals": "available",
+                    "Next": "Delete DB Cluster from Global DB"
+                  }
+                ],
+                "Default": "Create Secondary DB Cluster"
+              },
+              "Delete DB Cluster from Global DB": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaDeleteAuroraDBCluster}"
+                },
+                "Retry": [
+                  {
+                    "ErrorEquals": [
+                      "Lambda.ServiceException",
+                      "Lambda.AWSLambdaException",
+                      "Lambda.SdkClientException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                  }
+                ],
+                "Next": "Check Delete Cluster Status",
+                "ResultPath": "$.deleteresult"
+              },
+              "Check Delete Cluster Status": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                },
+                "ResultPath": "$.rdsdeletionstatus",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckAuroraDBClusterStatus}"
+                },
+                "Next": "Is Deleted?"
+              },
+              "Is Deleted?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Not": {
+                      "Variable": "$.rdsdeletionstatus.Payload.status",
+                      "StringMatches": "doesnotexist"
+                    },
+                    "Next": "Wait for delete"
+                  }
+                ],
+                "Default": "Create Secondary DB Cluster"
+              },
+              "Wait for delete": {
+                "Type": "Wait",
+                "Seconds": 120,
+                "Next": "Check Delete Cluster Status"
+              },
+              "Create Secondary DB Cluster": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.result",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCreateAuroraDBCluster}"
+                },
+                "Next": "Check DB Cluster Status"
+              },
+              "Check DB Cluster Status": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                },
+                "ResultPath": "$.creationstatus",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckDBInstanceStatus}"
+                },
+                "Next": "Is available?"
+              },
+              "Is available?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Not": {
+                      "Variable": "$.creationstatus.Payload.status",
+                      "StringMatches": "available"
+                    },
+                    "Next": "Wait"
+                  }
+                ],
+                "Default": "Send success token"
+              },
+              "Wait": {
+                "Type": "Wait",
+                "Seconds": 30,
+                "Next": "Check DB Cluster Status"
+              },
+              "Send success token": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${LambdaSendTaskTokenName}",
+                  "Payload": {
+                    "TaskToken.$": "$$.Execution.Input.TaskToken",
+                    "SfStartTime.$": "$$.Execution.StartTime",
+                    "resourceType.$": "$.StatePayload.resourceType",
+                    "resourceName.$": "$.StatePayload.resourceName"
+                  }
+                },
+                "ResultPath": "$.output",
+                "End": true
+              }
+            }
+          }
+
+Outputs:
+  StepFunctionPlannedAuroraFailoverArn:
+    Value: !GetAtt StepFunctionPlannedAuroraFailover.Arn
+  StepFunctionUnPlannedAuroraFailoverArn:
+    Value: !GetAtt StepFunctionUnPlannedAuroraFailover.Arn
+  StepFunctionCreateAuroraDBClusterArn:
+    Value: !GetAtt StepFunctionCreateAuroraDBCluster.Arn

@@ -1,0 +1,612 @@
+---
+Description: Lambda to Failover Global Database Template
+Parameters:
+  LambdaSendTaskTokenName:
+    Type: String
+  LambdaSendTaskTokenArn:
+    Type: String
+  LambdaGetExportsValueArn:
+    Type: String
+  S3CodeBucketName:
+    Type: String
+  RDSFailoverInstanceLambdaFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/rds-failover-instance.zip'
+  RDSCreateReadReplicaLambdaFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/rds-create-read-replica.zip'
+  RDSDeleteInstanceLambdaFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/rds-delete-instance.zip'
+  RDSCheckInstanceStatusLambdaFunctionKey:
+    Type: String
+    Default: 'DR-Orchestration-artifacts/lambda_function/rds-check-status.zip'  
+  LambdaSecurityGroupID:
+    Type: String
+  LambdaSubnetID1:
+    Type: String
+  LambdaSubnetID2:
+    Type: String
+  LambdaDLQArn:
+    Type: String
+
+Resources:
+  IAMStepFunctionExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Description: "Following least priviledges; for X-Ray it supports all resources"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "states.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - lambda:InvokeFunction
+                Resource: 
+                  - !GetAtt LambdaFailoverRDS.Arn
+                  - !GetAtt LambdaCreateRDSReadReplica.Arn
+                  - !GetAtt LambdaDeleteStandAloneRDSInstance.Arn
+                  - !GetAtt LambdaCheckRDSInstanceStatus.Arn
+                  - !Ref LambdaSendTaskTokenArn
+                  - !Ref LambdaGetExportsValueArn
+              - Effect: Allow
+                Action:
+                  - "states:StartExecution"
+                  - "states:DescribeExecution"
+                  - "states:StopExecution"
+                Resource:
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:dr-orchestrator*:*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:dr-orchestrator*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:express:dr-orchestrator*:*:*"
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+
+  IAMLambdaCheckRDSInstanceStatusRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any RDS instance in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:DescribeDBInstances"
+                Resource: 
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LambdaCheckRDSInstanceStatus:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-check-rds-inst-status
+      Description: !Sub 'Lambda function to check the status of RDS MySQL promote read replica'
+      Handler: rds-check-status.lambda_handler
+      Role: !GetAtt "IAMLambdaCheckRDSInstanceStatusRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref RDSCheckInstanceStatusLambdaFunctionKey
+      Runtime: python3.9
+      TracingConfig:
+        Mode: Active
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      ReservedConcurrentExecutions: 5
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaCheckRDSInstanceStatusPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaCheckRDSInstanceStatus
+      Principal: !Ref 'AWS::AccountId'
+
+  IAMLambdaPromoteReadReplicaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any RDS instance in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:PromoteReadReplica"
+                Resource: 
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+  
+  LambdaFailoverRDS:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-failover-rds-instance
+      Description: !Sub 'Lambda function to failover RDS Datastore'
+      Handler: rds-failover-instance.lambda_handler
+      Role: !GetAtt "IAMLambdaPromoteReadReplicaRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref RDSFailoverInstanceLambdaFunctionKey
+      Runtime: python3.9
+      Timeout: 120
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      TracingConfig:
+        Mode: Active   
+      ReservedConcurrentExecutions: 5  
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2    
+
+  LambdaFailoverRDSPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaFailoverRDS
+      Principal: !Ref 'AWS::AccountId'
+
+  StepFunctionRDSFailover:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: dr-orchestrator-jk-stepfunction-RDS-failover
+      RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "A description of my state machine",
+            "StartAt": "Resolve imports",
+            "States": {
+              "Resolve imports": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.StatePayload.parameters",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters",
+                  "FunctionName": "${LambdaGetExportsValueArn}"
+                },
+                "Next": "Promote RDS Read Replica"
+              },
+              "Promote RDS Read Replica": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.result",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaFailoverRDS}"
+                },
+                "Next": "Check Failover Status"
+              },
+              "Check Failover Status": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                },
+                "ResultPath": "$.failoverstatus",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckRDSInstanceStatus}"
+                },
+                "Next": "Is available?"
+              },
+              "Is available?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Not": {
+                      "Variable": "$.failoverstatus.Payload.status",
+                      "StringMatches": "available"
+                    },
+                    "Next": "Wait"
+                  }
+                ],
+                "Default": "Send success token"
+              },
+              "Wait": {
+                "Type": "Wait",
+                "Seconds": 15,
+                "Next": "Check Failover Status"
+              },
+              "Send success token": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${LambdaSendTaskTokenName}",
+                  "Payload": {
+                    "TaskToken.$": "$$.Execution.Input.TaskToken",
+                    "SfStartTime.$": "$$.Execution.StartTime",
+                    "resourceType.$": "$.StatePayload.resourceType",
+                    "resourceName.$": "$.StatePayload.resourceName"
+                  }
+                },
+                "ResultPath": "$.output",
+                "End": true
+              }
+            }
+          }
+
+  IAMLambdaDeleteDBInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any RDS instance in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:DescribeDBInstances"
+                  - "rds:DeleteDBInstance"
+                Resource: 
+                  - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+
+  LambdaDeleteStandAloneRDSInstance:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-delete-rds-instance
+      Description: !Sub 'Lambda function to re-created RDS read replica'
+      Handler: rds-delete-instance.lambda_handler
+      Role: !GetAtt "IAMLambdaDeleteDBInstanceRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref RDSDeleteInstanceLambdaFunctionKey
+      Runtime: python3.9
+      TracingConfig:
+        Mode: Active      
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      ReservedConcurrentExecutions: 5
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaDeleteStandAloneRDSInstancePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaDeleteStandAloneRDSInstance
+      Principal: !Ref 'AWS::AccountId'
+
+  IAMLambdaCreateDBInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Wildcards used on resource metadata to support testing of DR Orchestrator Framework to any RDS instance in the AWS Account"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - "rds:DescribeDBInstances"
+                  - "rds:CreateDBInstanceReadReplica"
+                Resource: 
+                  - !Sub "arn:aws:rds:*:${AWS::AccountId}:db:*"
+                  - !Sub "arn:aws:rds:*:${AWS::AccountId}:subgrp:*"
+                  - !Sub "arn:aws:rds:*:${AWS::AccountId}:og:*"
+              - Effect: Allow
+                Action:
+                  - "kms:CreateGrant"
+                  - "kms:DescribeKey"
+                  - "kms:ListGrants"
+                Resource: 
+                  - !Sub "arn:aws:kms:*:${AWS::AccountId}:key/*"
+              - Effect: Allow
+                Action:
+                  - "SQS:SendMessage"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:LambdaDeadLetterQueue"
+              - Effect: Allow
+                Action:
+                  - "iam:PassRole"
+                Resource: 
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/rds-monitoring-role"
+
+  LambdaCreateRDSReadReplica:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: dr-orchestrator-jk-lambda-create-rds-read-replica
+      Description: !Sub 'Lambda function to created RDS read replica'
+      Handler: rds-create-read-replica.lambda_handler
+      Role: !GetAtt "IAMLambdaCreateDBInstanceRole.Arn"
+      Code:
+        S3Bucket: !Ref S3CodeBucketName
+        S3Key: !Ref RDSCreateReadReplicaLambdaFunctionKey      
+      Runtime: python3.9
+      TracingConfig:
+        Mode: Active
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !Ref LambdaDLQArn
+      ReservedConcurrentExecutions: 5
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupID
+        SubnetIds:
+          - !Ref LambdaSubnetID1
+          - !Ref LambdaSubnetID2
+
+  LambdaCreateRDSReadReplicaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaCreateRDSReadReplica
+      Principal: !Ref 'AWS::AccountId'
+
+  StepFunctionRDSCreateReadReplica:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: dr-orchestrator-jk-stepfunction-RDS-Create-ReadReplica
+      RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "A description of my state machine",
+            "StartAt": "Resolve imports",
+            "States": {
+              "Resolve imports": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.StatePayload.parameters",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters",
+                  "FunctionName": "${LambdaGetExportsValueArn}"
+                },
+                "Next": "Check RDS Exists"
+              },
+              "Check RDS Exists": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckRDSInstanceStatus}"
+                },
+                "Retry": [
+                  {
+                    "ErrorEquals": [
+                      "Lambda.ServiceException",
+                      "Lambda.AWSLambdaException",
+                      "Lambda.SdkClientException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                  }
+                ],
+                "Next": "If exist?",
+                "ResultPath": "$.rdsstatus",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                }
+              },
+              "If exist?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.rdsstatus.Payload.status",
+                    "StringEquals": "available",
+                    "Next": "Delete RDS Instance"
+                  }
+                ],
+                "Default": "Create RDS Read Replica"
+              },
+              "Delete RDS Instance": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaDeleteStandAloneRDSInstance}"
+                },
+                "Retry": [
+                  {
+                    "ErrorEquals": [
+                      "Lambda.ServiceException",
+                      "Lambda.AWSLambdaException",
+                      "Lambda.SdkClientException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                  }
+                ],
+                "Next": "Check RDS Deletion Status",
+                "ResultPath": "$.deleteresult"
+              },
+              "Check RDS Deletion Status": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                },
+                "ResultPath": "$.rdsdeletionstatus",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckRDSInstanceStatus}"
+                },
+                "Next": "Is Deleted?"
+              },
+              "Is Deleted?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Not": {
+                      "Variable": "$.rdsdeletionstatus.Payload.status",
+                      "StringMatches": "doesnotexist"
+                    },
+                    "Next": "Wait for delete"
+                  }
+                ],
+                "Default": "Create RDS Read Replica"
+              },
+              "Wait for delete": {
+                "Type": "Wait",
+                "Seconds": 120,
+                "Next": "Check RDS Deletion Status"
+              },
+              "Create RDS Read Replica": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultPath": "$.result",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCreateRDSReadReplica}"
+                },
+                "Next": "Check RDS Read Replica Status"
+              },
+              "Check RDS Read Replica Status": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "ResultSelector": {
+                  "Payload.$": "$.Payload"
+                },
+                "ResultPath": "$.creationstatus",
+                "Parameters": {
+                  "Payload.$": "$.StatePayload.parameters.Payload",
+                  "FunctionName": "${LambdaCheckRDSInstanceStatus}"
+                },
+                "Next": "Is available?"
+              },
+              "Is available?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Not": {
+                      "Variable": "$.creationstatus.Payload.status",
+                      "StringMatches": "available"
+                    },
+                    "Next": "Wait"
+                  }
+                ],
+                "Default": "Send success token"
+              },
+              "Wait": {
+                "Type": "Wait",
+                "Seconds": 120,
+                "Next": "Check RDS Read Replica Status"
+              },
+              "Send success token": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${LambdaSendTaskTokenName}",
+                  "Payload": {
+                    "TaskToken.$": "$$.Execution.Input.TaskToken",
+                    "SfStartTime.$": "$$.Execution.StartTime",
+                    "resourceType.$": "$.StatePayload.resourceType",
+                    "resourceName.$": "$.StatePayload.resourceName"
+                  }
+                },
+                "ResultPath": "$.output",
+                "End": true
+              }
+            }
+          }
+Outputs:
+  StepFunctionRDSCreateReadReplicaArn:
+    Value: !GetAtt StepFunctionRDSCreateReadReplica.Arn
+  StepFunctionRDSFailoverArn:
+    Value: !GetAtt StepFunctionRDSFailover.Arn
+  LambdaCheckRDSInstanceStatusArn:
+    Value: !GetAtt LambdaCheckRDSInstanceStatus.Arn
