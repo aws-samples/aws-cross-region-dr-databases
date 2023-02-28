@@ -114,6 +114,7 @@ Resources:
     Type: AWS::SNS::Topic
     Properties: 
       TopicName: !Sub '${DBClusterName}-RDSEventsSNSTopic'
+      KmsMasterKeyId: !Ref KMSReplicaKeyForRDS
   
   RDSClusterEventSubscription:
     Type: AWS::RDS::EventSubscription
