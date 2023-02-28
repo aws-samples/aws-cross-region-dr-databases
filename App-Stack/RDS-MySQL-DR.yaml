@@ -129,6 +129,7 @@ Resources:
     Type: AWS::SNS::Topic
     Properties: 
       TopicName: !Sub '${MySqlGlobalIdentifier}-RDSEventsSNSTopic'
+      KmsMasterKeyId: !Ref KMSReplicaKeyForRDS
 
   RDSClusterEventSubscription:
     Type: AWS::RDS::EventSubscription

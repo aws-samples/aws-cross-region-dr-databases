@@ -2,7 +2,7 @@
 
 This solution includes the CloudFormation templates and shell script to deploy AWS databases and DR Orchestrator Framework. This document will describe how to use this solution. 
 
-Detailed documentation of this solution is published as a <i> AWS Prescriptive Guidance Library</i> guide and available on https://apg-library.amazonaws.com/content-viewer/author/7201b665-fd8c-49ab-968a-7a0eb2787d2c <Need to update the link>
+Detailed documentation of this solution is published as a <i> AWS Prescriptive Guidance Library</i> guide and available on https://apg-library.amazonaws.com/content-viewer/author/d246ab63-9f04-4f98-b5ad-efa34d559323  <Need to update the link>
 
 
 ## Set up
