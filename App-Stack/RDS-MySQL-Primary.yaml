@@ -148,7 +148,7 @@ Resources:
     Type: AWS::SNS::Topic
     Properties: 
       TopicName: !Sub '${MySqlGlobalIdentifier}-RDSEventsSNSTopic'
-      KmsMasterKeyId: !Ref KMSReplicaKeyForRDS
+      KmsMasterKeyId: !Ref KMSKeyForRDS
 
   RDSClusterEventSubscription:
     Type: AWS::RDS::EventSubscription
@@ -178,8 +178,8 @@ Resources:
     Type: 'AWS::RDS::DBInstance'
     Properties:
       Engine: MySQL
-      EngineVersion: 5.7.33
-      DBInstanceIdentifier: !Ref MySqlGlobalIdentifier
+      EngineVersion: 8.0.35
+      DBInstanceIdentifier: !Sub '${MySqlGlobalIdentifier}-use1'
       DBName: !Ref InitialDatabaseName
       MultiAZ: !Ref MultiAZDatabase
       MasterUsername:
@@ -244,7 +244,7 @@ Outputs:
       Name: !Sub ${MySqlGlobalIdentifier}-identifier
    MySQLSourceRDSInstanceIdentifier:
     Description: RDS MySQL Instance Identifier
-    Value: !Sub ${MySqlGlobalIdentifier}-read-replica
+    Value: !Sub ${MySqlGlobalIdentifier}-usw2
     Export:
       Name: !Sub '${MySqlGlobalIdentifier}-source-identifier'
    MySQLSecrets:

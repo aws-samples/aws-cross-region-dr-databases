@@ -5,20 +5,16 @@ Parameters:
     Type: String
   LambdaSendTaskTokenArn:
     Type: String
-  StepFunctionElastiCacheRedisFailoverArn:
+  StepFunctionRDSCreateReadReplicaArn:
     Type: String
-  StepFunctionRDSFailoverArn:
+  StepFunctionCreateAuroraDBClusterArn:
     Type: String
-  StepFunctionPlannedAuroraFailoverArn:
-    Type: String
-  StepFunctionUnPlannedAuroraFailoverArn:
-    Type: String
-
+    
 Resources:
   IAMStepFunctionExecutionRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
-      Description: "Following least priviledges; for X-Ray it supports all resources."
+      Description: "Following least priviledges; for xray, it supports all resources"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -53,17 +49,18 @@ Resources:
                   - xray:GetSamplingRules
                   - xray:GetSamplingTargets
                 Resource: "*"
-  StepFunctionOrchestrateActivate:
+
+  StepFunctionOrchestrateFailback:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: dr-orchestrator-jk-stepfunction-ACTIVATE
+      StateMachineName: dr-orchestrator-stepfunction-FAILBACK
       RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
       TracingConfiguration:
         Enabled: true
       DefinitionString:
         Fn::Sub: |
           {
-            "Comment": "Orchestrate Activate Stepfunction",
+            "Comment": "Orchestrate Failback Stepfunction",
             "StartAt": "Layers",
             "States": {
               "Layers": {
@@ -82,32 +79,22 @@ Resources:
                             "Choices": [
                               {
                                 "Variable": "$.StatePayload.resourceType",
-                                "StringEquals": "FailoverElastiCacheCluster",
-                                "Next": "FailoverElastiCacheCluster"
+                                "StringEquals": "CreateRDSReadReplica",
+                                "Next": "CreateRDSReadReplica"
                               },
                               {
                                 "Variable": "$.StatePayload.resourceType",
-                                "StringEquals": "PlannedFailoverAuroraMySQL",
-                                "Next": "PlannedFailoverAuroraMySQL"
-                              },
-                             {
-                                "Variable": "$.StatePayload.resourceType",
-                                "StringEquals": "UnPlannedFailoverAuroraMySQL",
-                                "Next": "UnPlannedFailoverAuroraMySQL"
-                              },                              
-                              {
-                                "Variable": "$.StatePayload.resourceType",
-                                "StringEquals": "PromoteRDSMySQLReadReplica",
-                                "Next": "PromoteRDSMySQLReadReplica"
+                                "StringEquals": "CreateAuroraSecondaryDBCluster",
+                                "Next": "CreateAuroraSecondaryDBCluster"
                               }
                             ],
                             "Default": "No-Ops"
                           },
-                          "PlannedFailoverAuroraMySQL": {
+                          "CreateRDSReadReplica": {
                             "Type": "Task",
                             "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
                             "Parameters": {
-                              "StateMachineArn": "${StepFunctionPlannedAuroraFailoverArn}",
+                              "StateMachineArn": "${StepFunctionRDSCreateReadReplicaArn}",
                               "Input": {
                                 "TaskToken.$": "$$.Task.Token",
                                 "StatePayload.$": "$.StatePayload"
@@ -117,11 +104,11 @@ Resources:
                             "InputPath": "$",
                             "ResultPath": "$.output"
                           },
-                          "UnPlannedFailoverAuroraMySQL": {
+                          "CreateAuroraSecondaryDBCluster": {
                             "Type": "Task",
                             "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
                             "Parameters": {
-                              "StateMachineArn": "${StepFunctionUnPlannedAuroraFailoverArn}",
+                              "StateMachineArn": "${StepFunctionCreateAuroraDBClusterArn}",
                               "Input": {
                                 "TaskToken.$": "$$.Task.Token",
                                 "StatePayload.$": "$.StatePayload"
@@ -131,34 +118,6 @@ Resources:
                             "InputPath": "$",
                             "ResultPath": "$.output"
                           },                          
-                          "PromoteRDSMySQLReadReplica": {
-                            "Type": "Task",
-                            "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
-                            "Parameters": {
-                              "StateMachineArn": "${StepFunctionRDSFailoverArn}",
-                              "Input": {
-                                "TaskToken.$": "$$.Task.Token",
-                                "StatePayload.$": "$.StatePayload"
-                              }
-                            },
-                            "End": true,
-                            "InputPath": "$",
-                            "ResultPath": "$.output"
-                          },
-                          "FailoverElastiCacheCluster": {
-                            "Type": "Task",
-                            "Resource": "arn:aws:states:::states:startExecution.waitForTaskToken",
-                            "Parameters": {
-                              "StateMachineArn": "${StepFunctionElastiCacheRedisFailoverArn}",
-                              "Input": {
-                                "TaskToken.$": "$$.Task.Token",
-                                "StatePayload.$": "$.StatePayload"
-                              }
-                            },
-                            "End": true,
-                            "InputPath": "$",
-                            "ResultPath": "$.output"
-                          },
                           "No-Ops": {
                             "Type": "Pass",
                             "End": true
@@ -181,8 +140,7 @@ Resources:
               }
             }
           }
-
- 
+         
 Outputs:
-  StepFunctionOrchestrateActivateArn:
-    Value: !GetAtt StepFunctionOrchestrateActivate.Arn
+  StepFunctionOrchestrateFailbackArn:
+    Value: !GetAtt StepFunctionOrchestrateFailback.Arn

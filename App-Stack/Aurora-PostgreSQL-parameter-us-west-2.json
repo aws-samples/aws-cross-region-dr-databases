@@ -1,0 +1,16 @@
+{
+  "Parameters": {
+    "SubnetIds": "subnet-xxxxxx,subnet-xxxxxx",
+    "DBSecurityGroup": "sg-xxxxxxxxxx",
+    "GlobalClusterIdentifier":"dr-globaldb-cluster-postgres",
+    "DBClusterName":"pgcluster-02",
+    "SourceDBClusterName":"pgcluster-01",
+    "DBPortNumber": "5432",
+    "DBInstanceClass":"db.r5.large",
+    "InitialDatabaseName": "sampledb",
+    "PrimaryRegion": "us-east-1",
+    "SecondaryRegion": "us-west-2",
+    "KMSKeyAliasName": "rds/dr-globaldb-cluster-postgres-KmsKeyId",
+    "PrimaryRegionKMSKeyArn":"arn:aws:kms:us-east-1:xxxxxx:key/mrk-xxxxxxxxxxxxxxxxxx"
+  }
+}

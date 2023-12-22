@@ -1,5 +1,41 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Aurora Cluster Configuration
+      Parameters:
+      - GlobalClusterIdentifier
+      - DBClusterName
+      - SourceDBClusterName
+      - InitialDatabaseName
+      - KMSKeyAliasName
+    - Label:
+        default: Amazon VPC Network and Security Configuration
+      Parameters:
+      - SubnetIds
+      - DBSecurityGroup
+    ParameterLabels:
+      GlobalClusterIdentifier:
+        default: Enter the Aurora Global Database Name (Required)
+      DBClusterName:
+        default: Enter the Database Cluster Name (Required)
+      DBPortNumber:
+        default: Enter DB Cluster Port (Required)
+      SourceDBClusterName:
+        default: Enter the DR Database Cluster Name (Required)
+      DBInstanceClass:  
+        default: Enter the Database Instance Class (Required)
+      InitialDatabaseName:
+        default: Enter Database Name (Required)
+      SubnetIds:
+        default: Enter DB Subnets for Subnet Group Creation (Required)
+      DBSecurityGroup:
+        default: Enter DB Security Group (Required)
+      KMSKeyAliasName:
+        default: Enter the PostgreSQL KMS Key Alias Name(Required)
+
 Parameters:
   GlobalClusterIdentifier:
     Type: String
@@ -7,41 +43,51 @@ Parameters:
     AllowedPattern: "^[a-zA-Z]{1}(?:-?[a-zA-Z0-9]){0,62}$"
   DBClusterName:
     Type: String
-    Description: Database Cluster Name
+    Description: Name of the database cluster
     AllowedPattern: "^[a-zA-Z]{1}(?:-?[a-zA-Z0-9]){0,62}$"
   SourceDBClusterName:
     Type: String
     Description: Name of the source database cluster created in DR region
-    AllowedPattern: "^[a-zA-Z]{1}(?:-?[a-zA-Z0-9]){0,62}$"
+    AllowedPattern: "^[a-zA-Z]{1}(?:-?[a-zA-Z0-9]){0,62}$" 
+  DBInstanceClass:  
+    Type: String
+    Description: Enter the Database Instance Class
+  InitialDatabaseName:
+    Type: String
+    Description: Enter the Initial Database Name where tables will be created
   DBPortNumber:
     Description: The port of the database cluster
     Type: Number
-  DBInstanceClass:
-    Type: String
-    Description: Enter the Database Instance Class
+  SubnetIds:
+    Description:
+        Subnet for VPC Subnet Group.
+    Type: List<AWS::EC2::Subnet::Id>
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    AllowedPattern: "^sg-[a-z0-9]*$"
+    Description: Choose a DB Security Group ID based on the VPC of your Aurora DB
   PrimaryRegion: 
     Description: Enter the Source Region
     Type: String
   SecondaryRegion: 
     Description: Enter the Source Region
     Type: String
-  SubnetIds:
-    Description:
-        Subnet for VPC Subnet Group.
-    Type: List<AWS::EC2::Subnet::Id> 
-  DBSecurityGroup:
-    Type: AWS::EC2::SecurityGroup::Id
-    AllowedPattern: "^sg-[a-z0-9]*$"
-    Description: Choose a Security Group ID
+  KMSKeyAliasName:
+    Type: String
   Engine:
     Type: String
-    Default: aurora-mysql
+    Default: aurora-postgresql
   EngineVersion:
     Type: String
-    Default: 8.0.mysql_aurora.3.05.0
-  PrimaryRegionKMSKeyArn:
-    Description: Enter the ARN of Primary Region KMS Key used for Aurora instance
-    Type: String    
+    Default: "14.6"
+    AllowedValues:
+      - 13.7
+      - 14.2
+      - 14.5
+      - 14.6
+      - 15.2
+ 
+
 
 Resources:
   DBSubnetGroup:
@@ -51,12 +97,13 @@ Resources:
       DBSubnetGroupDescription: !Sub ${AWS::StackName}-Cache Subnet Group Redis 
       SubnetIds:
           Ref: SubnetIds
-          
-  KMSReplicaKeyForRDS:
-    Type: 'AWS::KMS::ReplicaKey'
+
+  KMSKeyForRDS:
+    Type: "AWS::KMS::Key"
     Properties:
       Description: An example of a multi-Region KMS key
-      PrimaryKeyArn: !Ref PrimaryRegionKMSKeyArn
+      MultiRegion: true
+      EnableKeyRotation: true
       KeyPolicy:
         Version: 2012-10-17
         Id: rds-multi-region-kms-key
@@ -68,54 +115,89 @@ Resources:
             Action: "kms:*"
             Resource: "*"
 
+  KMSKeyAliasRDS:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${KMSKeyAliasName}'
+      TargetKeyId: !Ref KMSKeyForRDS
+
+  RDSSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties: 
+      KmsKeyId: !Ref KMSKeyForRDS
+      Name: !Sub
+      - dr/testing/${GlobalDBName}
+      - {GlobalDBName: !Ref GlobalClusterIdentifier}
+      GenerateSecretString:
+        SecretStringTemplate: !Sub
+        - '{"username": "pgmasteruser","dbname":"${databaseName}"}'
+        - {databaseName: !Ref InitialDatabaseName}
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'  
+      ReplicaRegions: 
+      - Region: !Ref SecondaryRegion
+
   RDSCluster:
     Type: AWS::RDS::DBCluster
     Properties:
-      GlobalClusterIdentifier:
-        Ref: GlobalClusterIdentifier
-      DBClusterIdentifier: !Ref DBClusterName  
+      DBClusterIdentifier: !Ref DBClusterName
+      MasterUsername:
+        Fn::Sub: "{{resolve:secretsmanager:${RDSSecret}::username}}"
+      MasterUserPassword:
+        Fn::Sub: "{{resolve:secretsmanager:${RDSSecret}::password}}"
+      DatabaseName:
+        Ref: InitialDatabaseName
       DBSubnetGroupName:
         Ref: DBSubnetGroup
       VpcSecurityGroupIds:
       - Ref: DBSecurityGroup
-      DBClusterParameterGroupName: default.aurora-mysql8.0
-      KmsKeyId : !Ref KMSReplicaKeyForRDS
+      DBClusterParameterGroupName: default.aurora-postgresql14
       StorageEncrypted: True
       Engine: !Ref Engine
       EngineVersion: !Ref EngineVersion
-      SourceRegion: !Ref PrimaryRegion
       EnableIAMDatabaseAuthentication: True
       DeletionProtection: True
-      CopyTagsToSnapshot: True
       BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: True
       Port: !Ref DBPortNumber
       EnableCloudwatchLogsExports:
-        - error
-        - general
-        - slowquery
-        - audit
-      
+        - postgresql
+    DependsOn: RDSSecret
+
+  GlobalCluster:
+    Type: AWS::RDS::GlobalCluster
+    Properties:
+      GlobalClusterIdentifier:
+        Ref: GlobalClusterIdentifier
+      SourceDBClusterIdentifier:
+        Ref: RDSCluster
+    DependsOn: 
+      - RDSSecret
+      - RDSCluster
+
   RDSDBInstance:
     Type: AWS::RDS::DBInstance
     Properties:
-      DBInstanceIdentifier: !Sub '${DBClusterName}-usw2-instance-2'
-      Engine: aurora-mysql
+      DBInstanceIdentifier: !Sub '${DBClusterName}-use1-instance-1'
+      Engine: !Ref Engine
       DBClusterIdentifier:
         Ref: RDSCluster
-      DBParameterGroupName: default.aurora-mysql8.0
+      DBParameterGroupName: default.aurora-postgresql14
       DBSubnetGroupName:
         Ref: DBSubnetGroup
-      PubliclyAccessible: false
+      PubliclyAccessible: 'false'
       DBInstanceClass: !Ref DBInstanceClass
+      EnablePerformanceInsights: True
       MonitoringInterval: 60
       MonitoringRoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/rds-monitoring-role'
-
+  
   SNSforRDSEvents:
     Type: AWS::SNS::Topic
     Properties: 
       TopicName: !Sub '${DBClusterName}-RDSEventsSNSTopic'
-      KmsMasterKeyId: !Ref KMSReplicaKeyForRDS
-  
+      KmsMasterKeyId: !Ref KMSKeyForRDS
+
   RDSClusterEventSubscription:
     Type: AWS::RDS::EventSubscription
     Properties:
@@ -147,7 +229,7 @@ Resources:
       SourceIds:
         - !Ref RDSDBInstance
       Enabled: true
-      
+
 Outputs:
   GlobalClusterIdentifier:
     Description: Aurora Global Cluster Identifier
@@ -198,7 +280,7 @@ Outputs:
         'Fn::Sub': '${GlobalClusterIdentifier}-port'
   DBInstanceIdentifier:
     Description: Aurora DB Instance Identifier
-    Value: !Sub '${DBClusterName}-usw2-instance-2'
+    Value: !Sub '${DBClusterName}-use1-instance-1'
     Export:
       Name: 
         'Fn::Sub': '${GlobalClusterIdentifier}-instance-identifier'
@@ -210,30 +292,30 @@ Outputs:
         'Fn::Sub': '${GlobalClusterIdentifier}-instance-class'
   SourceRegion:
     Description: Aurora DB Cluster Source Region
-    Value: !Ref PrimaryRegion
+    Value: !Ref SecondaryRegion
     Export:
       Name: 
         'Fn::Sub': '${GlobalClusterIdentifier}-source-region'
   SourceDBClusterIdentifier:
     Description: Aurora Source DB Cluster created in DR Region
-    Value: !Sub 'arn:aws:rds:${PrimaryRegion}:${AWS::AccountId}:cluster:${SourceDBClusterName}'
+    Value: !Sub 'arn:aws:rds:${SecondaryRegion}:${AWS::AccountId}:cluster:${SourceDBClusterName}'
     Export:
       Name: 
         'Fn::Sub': '${GlobalClusterIdentifier}-source-cluster-identifier'
   ClusterRegion:
     Description: Aurora DB Cluster Current Region
-    Value: !Ref SecondaryRegion
+    Value: !Ref PrimaryRegion
     Export:
       Name: 
         'Fn::Sub': '${GlobalClusterIdentifier}-cluster-region'
   AuroraKmsKeyId:
-    Description: Aurora MySQL KMS Key Id
-    Value: !GetAtt KMSReplicaKeyForRDS.Arn
+    Description: Aurora PostgreSQL KMS Key Id
+    Value: !GetAtt KMSKeyForRDS.Arn
     Export:
       Name: 
        'Fn::Sub': '${GlobalClusterIdentifier}-KmsKeyId'
   RDSMonitoringRoleARN:
-    Description: RDS MySQL Monitoring IAM Role
+    Description: RDS PostgreSQL Monitoring IAM Role
     Value: !Sub 'arn:aws:iam::${AWS::AccountId}:role/rds-monitoring-role'
     Export:
       Name: !Sub '${GlobalClusterIdentifier}-RDSMonitoringRole'

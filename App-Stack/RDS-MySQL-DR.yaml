@@ -157,9 +157,9 @@ Resources:
   MySQLDatabase:
     Type: 'AWS::RDS::DBInstance'
     Properties:
-      DBInstanceIdentifier: !Sub '${MySqlGlobalIdentifier}-read-replica'
+      DBInstanceIdentifier: !Sub '${MySqlGlobalIdentifier}-usw2'
       Port: !Ref DBPortNumber
-      SourceDBInstanceIdentifier: !Sub 'arn:aws:rds:${SecondaryRegion}:${AWS::AccountId}:db:${MySqlGlobalIdentifier}'
+      SourceDBInstanceIdentifier: !Sub 'arn:aws:rds:${SecondaryRegion}:${AWS::AccountId}:db:${MySqlGlobalIdentifier}-use1'
       MultiAZ: !Ref MultiAZDatabase
       DBInstanceClass: !Ref DBInstanceClass
       AllocatedStorage: !Ref DBAllocatedStorage
@@ -191,17 +191,17 @@ Resources:
 Outputs:
    MySQLInstanceARN:
     Description: RDS MySQL Instance ARN
-    Value: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${MySqlGlobalIdentifier}-read-replica'
+    Value: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${MySqlGlobalIdentifier}-usw2'
     Export:
       Name: !Sub '${MySqlGlobalIdentifier}-global-arn'
    MySQLInstanceIdentifier:
     Description: RDS MySQL Instance Identifier
-    Value: !Sub '${MySqlGlobalIdentifier}-read-replica'
+    Value: !Sub '${MySqlGlobalIdentifier}-usw2'
     Export:
       Name: !Sub ${MySqlGlobalIdentifier}-identifier
    MySQLSourceRDSInstanceIdentifier:
     Description: RDS MySQL Instance Identifier
-    Value: !Sub ${MySqlGlobalIdentifier}
+    Value: !Sub ${MySqlGlobalIdentifier}-use1
     Export:
       Name: !Sub '${MySqlGlobalIdentifier}-source-identifier'
    MySQLSecrets:

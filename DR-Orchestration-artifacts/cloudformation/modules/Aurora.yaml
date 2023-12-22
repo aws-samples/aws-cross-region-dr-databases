@@ -128,7 +128,7 @@ Resources:
   LambdaRemoveFromAuroraGlobalCluster:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-remove-from-global-cuslter
+      FunctionName: dr-orchestrator-lambda-remove-from-global-cuslter
       Description: !Sub 'Lambda function to remove Aurora Cluster from Global Database'
       Handler: aurora-remove-from-global-cluster.lambda_handler
       Role: !GetAtt "IAMLambdaDetachClusterRole.Arn"
@@ -193,7 +193,7 @@ Resources:
   LambdaFailoverAuroraGlobalDatabase:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-failover-Aurora-GlobalDatabase
+      FunctionName: dr-orchestrator-lambda-failover-Aurora-GlobalDatabase
       Description: !Sub 'Lambda function to remove Aurora Cluster from Global Database'
       Handler: aurora-failover-global-db-cluster.lambda_handler
       Role: !GetAtt "IAMLambdaFailoverAuroraGlobalDBRole.Arn"
@@ -256,7 +256,7 @@ Resources:
   LambdaCheckAuroraGlobalDBClusterStatus:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-check-Aurora-global-cluster-status
+      FunctionName: dr-orchestrator-lambda-check-Aurora-global-cluster-status
       Description: !Sub 'Lambda function to check Aurora Global DB Cluster Status'
       Handler: aurora-check-global-db-cluster-status.lambda_handler
       Role: !GetAtt "IAMLambdaDescGlobalDBClusterRole.Arn"
@@ -321,7 +321,7 @@ Resources:
   LambdaCheckAuroraDBClusterStatus:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-check-Aurora-db-cluster-status
+      FunctionName: dr-orchestrator-lambda-check-Aurora-db-cluster-status
       Description: !Sub 'Lambda function to check Aurora DB Cluster Status'
       Handler: aurora-check-db-cluster-status.lambda_handler
       Role: !GetAtt "IAMLambdaDescDBClusterRole.Arn"
@@ -352,7 +352,7 @@ Resources:
   StepFunctionPlannedAuroraFailover:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: dr-orchestrator-jk-stepfunction-planned-Aurora-failover
+      StateMachineName: dr-orchestrator-stepfunction-planned-Aurora-failover
       RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
       TracingConfiguration:
         Enabled: true
@@ -435,7 +435,7 @@ Resources:
   StepFunctionUnPlannedAuroraFailover:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: dr-orchestrator-jk-stepfunction-unplanned-Aurora-failover
+      StateMachineName: dr-orchestrator-stepfunction-unplanned-Aurora-failover
       RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
       TracingConfiguration:
         Enabled: true
@@ -560,7 +560,7 @@ Resources:
   LambdaDeleteAuroraDBCluster:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-delete-aurora-db-cluster
+      FunctionName: dr-orchestrator-lambda-delete-aurora-db-cluster
       Description: !Sub 'Lambda function to delete Aurora DB Cluster'
       Handler: aurora-delete-db-cluster.lambda_handler
       Role: !GetAtt "IAMLambdaDeleteDBClusterRole.Arn"
@@ -645,7 +645,7 @@ Resources:
   LambdaCreateAuroraDBCluster:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-create-aurora-db-cluster
+      FunctionName: dr-orchestrator-lambda-create-aurora-db-cluster
       Description: !Sub 'Lambda function to create Aurora DB Cluster'
       Handler: aurora-create-db-cluster.lambda_handler
       Role: !GetAtt "IAMLambdaCreateDBClusterRole.Arn"
@@ -710,7 +710,7 @@ Resources:
   LambdaCheckDBInstanceStatus:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-check-Aurora-db-instance-status
+      FunctionName: dr-orchestrator-lambda-check-Aurora-db-instance-status
       Description: !Sub 'Lambda function to check Aurora DB Instance Status'
       Handler: aurora-check-db-instance-status.lambda_handler
       Role: !GetAtt "IAMLambdaCheckDBInstanceStatusRole.Arn"
@@ -741,7 +741,7 @@ Resources:
   StepFunctionCreateAuroraDBCluster:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: dr-orchestrator-jk-stepfunction-create-Aurora-Secondary-cluster
+      StateMachineName: dr-orchestrator-stepfunction-create-Aurora-Secondary-cluster
       RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
       TracingConfiguration:
         Enabled: true
