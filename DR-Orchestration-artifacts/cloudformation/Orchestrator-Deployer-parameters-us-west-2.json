@@ -1,22 +1,22 @@
 [
     {
          "ParameterKey": "TemplateStoreS3BucketName",
-         "ParameterValue": "dr-orchestrator-source-code-us-west-2"
+         "ParameterValue": "dr-orchestrator-xxxxxx-us-west-2"
     },
     {
         "ParameterKey": "TemplateVPCId",
-        "ParameterValue": "vpc-0188048c038f2b7f9"
+        "ParameterValue": "vpc-xxxxxx"
     },    
     {
         "ParameterKey": "TemplateLambdaSubnetID1",
-        "ParameterValue": "subnet-067f3f1462d8de776"
+        "ParameterValue": "subnet-xxxxxx"
     },
     {
         "ParameterKey": "TemplateLambdaSubnetID2",
-        "ParameterValue": "subnet-015c222964af039ee"
+        "ParameterValue": "subnet-yyyyyy"
     },
     {
         "ParameterKey": "TemplateLambdaSecurityGroupID",
-        "ParameterValue": "sg-0d46c36c42e79681c"
+        "ParameterValue": "sg-xxxxxxxxxx"
     }
  ]

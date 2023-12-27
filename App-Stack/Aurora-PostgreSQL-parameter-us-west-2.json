@@ -5,7 +5,7 @@
     "GlobalClusterIdentifier":"dr-globaldb-cluster-postgres",
     "DBClusterName":"pgcluster-02",
     "SourceDBClusterName":"pgcluster-01",
-    "DBPortNumber": "5432",
+    "DBPortNumber": "3787",
     "DBInstanceClass":"db.r5.large",
     "InitialDatabaseName": "sampledb",
     "PrimaryRegion": "us-east-1",

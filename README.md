@@ -45,7 +45,7 @@ git clone https://github.com/aws-samples/aws-cross-region-dr-databases.git
 4. Create a Security Group in your VPC in both Primary (us-east-1)as well in the Secondary (us-west-2) regions:
     - sg-XXXXXXXXXXXX
  
-5. Upload <b>DR-Orchestration-artifacts</b> directory inlcluding all files to S3 buckets in both regions.
+5. Upload <b>DR-Orchestration-artifacts</b> directory including all files to S3 buckets in both regions.
 6. Ensure that you are using subnet Ids, Security Group, vpcId from the same VPC where you have deployed AWS databases (RDS, Aurora and ElastiCache). Otherwise you have to add the Subnet Ids in the Interface Endpoints created the DR Orchestrator.
 7. Ensure AWS database are available in the same AWS region
 
