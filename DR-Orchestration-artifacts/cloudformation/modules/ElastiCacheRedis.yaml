@@ -48,9 +48,9 @@ Resources:
                   - "states:DescribeExecution"
                   - "states:StopExecution"
                 Resource: 
-                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution::dr-orchestrator-jk-stepfunction-Redis-failover:*"
-                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine::dr-orchestrator-jk-stepfunction-Redis-failover"
-                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:express::dr-orchestrator-jk-stepfunction-Redis-failover:*:*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution::dr-orchestrator-stepfunction-Redis-failover:*"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine::dr-orchestrator-stepfunction-Redis-failover"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:express::dr-orchestrator-stepfunction-Redis-failover:*:*"
               - Effect: Allow
                 Action:
                   - xray:PutTraceSegments
@@ -129,7 +129,7 @@ Resources:
   LambdaFailoverElastiCacheRedis:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-failover-ElastiCacheRedis
+      FunctionName: dr-orchestrator-lambda-failover-ElastiCacheRedis
       Description: !Sub 'Lambda function to failover Redis Global Datastore'
       Handler: index.lambda_handler
       Architectures: 
@@ -191,7 +191,7 @@ Resources:
   LambdaCheckElastiCacheRedisStatus:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-check-Redis-failover-status
+      FunctionName: dr-orchestrator-lambda-check-Redis-failover-status
       Description: !Sub 'Lambda function to check the status of Redis Global Datastore failover'
       Handler: index.lambda_handler
       Architectures: 
@@ -247,7 +247,7 @@ Resources:
   StepFunctionElastiCacheRedisFailover:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: dr-orchestrator-jk-stepfunction-Redis-failover
+      StateMachineName: dr-orchestrator-stepfunction-Redis-failover
       RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
       TracingConfiguration:
         Enabled: true

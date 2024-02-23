@@ -9,11 +9,11 @@
     },
     {
         "ParameterKey": "TemplateLambdaSubnetID1",
-        "ParameterValue": "subnet1-xxxxxx"
+        "ParameterValue": "subnet-xxxxxx"
     },
     {
         "ParameterKey": "TemplateLambdaSubnetID2",
-        "ParameterValue": "subnet2-xxxxxx"
+        "ParameterValue": "subnet-yyyyyy"
     },
     {
         "ParameterKey": "TemplateLambdaSecurityGroupID",

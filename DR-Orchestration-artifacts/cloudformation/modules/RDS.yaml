@@ -112,7 +112,7 @@ Resources:
   LambdaCheckRDSInstanceStatus:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-check-rds-inst-status
+      FunctionName: dr-orchestrator-lambda-check-rds-inst-status
       Description: !Sub 'Lambda function to check the status of RDS MySQL promote read replica'
       Handler: rds-check-status.lambda_handler
       Role: !GetAtt "IAMLambdaCheckRDSInstanceStatusRole.Arn"
@@ -177,7 +177,7 @@ Resources:
   LambdaFailoverRDS:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-failover-rds-instance
+      FunctionName: dr-orchestrator-lambda-failover-rds-instance
       Description: !Sub 'Lambda function to failover RDS Datastore'
       Handler: rds-failover-instance.lambda_handler
       Role: !GetAtt "IAMLambdaPromoteReadReplicaRole.Arn"
@@ -208,7 +208,7 @@ Resources:
   StepFunctionRDSFailover:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: dr-orchestrator-jk-stepfunction-RDS-failover
+      StateMachineName: dr-orchestrator-stepfunction-RDS-failover
       RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
       TracingConfiguration:
         Enabled: true
@@ -325,7 +325,7 @@ Resources:
   LambdaDeleteStandAloneRDSInstance:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-delete-rds-instance
+      FunctionName: dr-orchestrator-lambda-delete-rds-instance
       Description: !Sub 'Lambda function to re-created RDS read replica'
       Handler: rds-delete-instance.lambda_handler
       Role: !GetAtt "IAMLambdaDeleteDBInstanceRole.Arn"
@@ -405,7 +405,7 @@ Resources:
   LambdaCreateRDSReadReplica:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-create-rds-read-replica
+      FunctionName: dr-orchestrator-lambda-create-rds-read-replica
       Description: !Sub 'Lambda function to created RDS read replica'
       Handler: rds-create-read-replica.lambda_handler
       Role: !GetAtt "IAMLambdaCreateDBInstanceRole.Arn"
@@ -436,7 +436,7 @@ Resources:
   StepFunctionRDSCreateReadReplica:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: dr-orchestrator-jk-stepfunction-RDS-Create-ReadReplica
+      StateMachineName: dr-orchestrator-stepfunction-RDS-Create-ReadReplica
       RoleArn: !GetAtt [IAMStepFunctionExecutionRole, Arn]
       TracingConfiguration:
         Enabled: true

@@ -104,9 +104,7 @@ Resources:
     Properties:
       ReplicationGroupDescription: 'Elastic Cache Redis Cluster Replication Group used for Demo global datastore'
       Port: !Ref DBPortNumber
-      #AtRestEncryptionEnabled: true
-      AuthToken: 
-        Fn::Sub: "{{resolve:secretsmanager:${GlobalReplicationGroupIdSuffix}:SecretString:password}}"
+      AuthToken: !Sub "{{resolve:secretsmanager:${GlobalReplicationGroupIdSuffix}::auth_token}}"
       MultiAZEnabled: True
       CacheSubnetGroupName: !Ref SubnetGroup
       GlobalReplicationGroupId: !Sub ldgnf-${GlobalReplicationGroupIdSuffix}

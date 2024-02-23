@@ -105,7 +105,7 @@ Resources:
   LambdaSendSuccessToken:
     Type: "AWS::Lambda::Function"
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-send-success-token
+      FunctionName: dr-orchestrator-lambda-send-success-token
       Handler: "index.lambda_handler"
       Role: !GetAtt "IAMSendSuccessTokenRole.Arn"
       Runtime: "python3.9"
@@ -198,7 +198,7 @@ Resources:
   LamdbaGetExportValues:
     Type: "AWS::Lambda::Function"
     Properties:
-      FunctionName: dr-orchestrator-jk-lambda-get-exports-value
+      FunctionName: dr-orchestrator-lambda-get-exports-value
       Handler: "index.lambda_handler"
       Role: !GetAtt "IAMListCFTExportValuesRole.Arn"
       Runtime: "python3.9"

@@ -91,13 +91,13 @@ Resources:
         LambdaDLQArn:
           !GetAtt UtilityFunctionsStack.Outputs.LambdaDLQArn
 
-  ActivateOrchestratorStack:
+  FailoverOrchestratorStack:
     Type: 'AWS::CloudFormation::Stack'
     Properties:
-      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/Activate-Orchestrator.yaml"  
+      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/Failover-Orchestrator.yaml"  
       Parameters:  
         LambdaSendTaskTokenArn: 
-          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenArn      
+          !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenArn
         LambdaSendTaskTokenName: 
           !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenName 
         StepFunctionElastiCacheRedisFailoverArn:
@@ -109,10 +109,10 @@ Resources:
         StepFunctionUnPlannedAuroraFailoverArn:
           !GetAtt AuroraModuleStack.Outputs.StepFunctionUnPlannedAuroraFailoverArn
 
-  ReplicateOrchestratorStack:
+  FailbackOrchestratorStack:
     Type: 'AWS::CloudFormation::Stack'
     Properties:
-      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/Replicate-Orchestrator.yaml"
+      TemplateURL: !Sub "https://${TemplateStoreS3BucketName}.s3.${AWS::Region}.amazonaws.com/DR-Orchestration-artifacts/cloudformation/Failback-Orchestrator.yaml"
       Parameters:  
         LambdaSendTaskTokenArn: 
           !GetAtt UtilityFunctionsStack.Outputs.LambdaSendTaskTokenArn

@@ -137,9 +137,10 @@ Resources:
       Name: !Ref GlobalReplicationGroupIdSuffix
       GenerateSecretString:
         SecretStringTemplate: '{"userid": "drmasteruser001","username":"drmasteruser"}'
-        GenerateStringKey: "password"
-        PasswordLength: 16
-        ExcludeCharacters: '"@/\'
+        GenerateStringKey: "auth_token"
+        PasswordLength: 30
+        ExcludeCharacters: '[]{}\/"!&#$^<>-'
+        ExcludePunctuation: True
       ReplicaRegions:
       - Region: !Ref SecondaryRegion
 
@@ -158,8 +159,7 @@ Resources:
       ReplicationGroupDescription: 'Elastic Cache Redis Cluster Replication Group used for demo global data store'
       AtRestEncryptionEnabled: true
       Port: !Ref DBPortNumber
-      AuthToken: 
-        Fn::Sub: "{{resolve:secretsmanager:${GlobalReplicationGroupIdSuffix}:SecretString:password}}"
+      AuthToken: !Sub "{{resolve:secretsmanager:${ElastiCacheSecret}::auth_token}}"
       AutomaticFailoverEnabled: !If [HasAutomaticFailoverEnabled, true, false]
       MultiAZEnabled: !If [HasAutomaticFailoverEnabled, true, false]
       CacheNodeType: !Ref CacheNodeType
