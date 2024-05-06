@@ -8,7 +8,7 @@
     "NumReplicas": "1",
     "NumShards": "1",
     "ReplicationGroupId": "demo-redis-cluster",
-    "DBPortNumber": "3788",
+    "DBPortNumber": "3789",
     "TransitEncryption": "true",
     "KMSKeyAliasName": "elasticache/demo-redis-global-datastore-KmsKeyId",
     "PrimaryRegion": "us-east-1",

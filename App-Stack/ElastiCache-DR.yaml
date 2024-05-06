@@ -108,7 +108,7 @@ Resources:
       MultiAZEnabled: True
       CacheSubnetGroupName: !Ref SubnetGroup
       GlobalReplicationGroupId: !Sub ldgnf-${GlobalReplicationGroupIdSuffix}
-      ReplicationGroupId: !Sub ${ReplicationGroupId}-secondary
+      ReplicationGroupId: !Sub ${ReplicationGroupId}-usw2
       NumCacheClusters: !If [UsingMultipleShards, !Ref "AWS::NoValue",!Ref NumCacheClusters] 
       SecurityGroupIds:
       - !Ref DBSecurityGroup
