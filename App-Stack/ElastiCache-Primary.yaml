@@ -167,7 +167,7 @@ Resources:
       CacheSubnetGroupName: !Ref SubnetGroup
       Engine: redis
       EngineVersion: !Ref EngineVersion
-      ReplicationGroupId: !Sub ${ReplicationGroupId}-primary
+      ReplicationGroupId: !Sub ${ReplicationGroupId}-use1
       NumNodeGroups: !Ref NumShards
       ReplicasPerNodeGroup: !Ref NumReplicas
       SecurityGroupIds:

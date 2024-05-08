@@ -38,7 +38,7 @@ Parameters:
     Default: aurora-mysql
   EngineVersion:
     Type: String
-    Default: 8.0.mysql_aurora.3.05.0
+    Default: 8.0.mysql_aurora.3.05.2
   PrimaryRegionKMSKeyArn:
     Description: Enter the ARN of Primary Region KMS Key used for Aurora instance
     Type: String    
@@ -171,7 +171,7 @@ Outputs:
     Value: !Ref DBSecurityGroup
     Export:
       Name: 
-        'Fn::Sub': '${GlobalClusterIdentifier}-vps-security-group-ids'
+        'Fn::Sub': '${GlobalClusterIdentifier}-vpc-security-group-ids'
   Engine:
     Description: Aurora Engine
     Value: !Ref Engine

@@ -253,7 +253,7 @@ Outputs:
     Value: !Ref DBSecurityGroup
     Export:
       Name: 
-        'Fn::Sub': '${GlobalClusterIdentifier}-vps-security-group-ids'
+        'Fn::Sub': '${GlobalClusterIdentifier}-vpc-security-group-ids'
   Engine:
     Description: Aurora Engine
     Value: !Ref Engine

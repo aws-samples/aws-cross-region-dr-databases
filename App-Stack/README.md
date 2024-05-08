@@ -42,7 +42,13 @@ Deploy the resources using the <b>CloudFormation Template</b> from <b>AWS CLI</b
 - Run the below command:
 
   ```bash
-  aws cloudformation deploy --region us-east-1 --stack-name aurora-mysql-app-stack --template-file Aurora-MySQL-Primary.yaml --parameter-overrides file://Aurora-MySQL-parameter-us-east-1.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
+  aws cloudformation deploy \
+  --region us-east-1 \
+  --stack-name aurora-mysql-app-stack \
+  --template-file Aurora-MySQL-Primary.yaml \
+  --parameter-overrides file://Aurora-MySQL-parameter-us-east-1.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
   ```
 
 #### 1.2) Deploy Aurora MySQL resources in Secondary Region (US-WEST-2)
@@ -53,7 +59,13 @@ with the value of <b>AuroraKmsKeyId</b> from the <b>Outputs</b> section of Cloud
 - Once the resource are created in the Primary Region. Run the below command to deploy the resources in the Secondary Region:
 
   ```bash
-  aws cloudformation deploy --region us-west-2 --stack-name aurora-mysql-app-stack --template-file Aurora-MySQL-DR.yaml --parameter-overrides file://Aurora-MySQL-parameter-us-west-2.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
+  aws cloudformation deploy \
+  --region us-west-2 \
+  --stack-name aurora-mysql-app-stack \
+  --template-file Aurora-MySQL-DR.yaml \
+  --parameter-overrides file://Aurora-MySQL-parameter-us-west-2.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
   ```
 
 ### 2) Create Amazon Aurora PostgreSQL Global Database
@@ -75,7 +87,13 @@ Deploy the resources using the <b>CloudFormation Template</b> from <b>AWS CLI</b
 - Run the below command:
 
   ```bash
-  aws cloudformation deploy --region us-east-1 --stack-name aurora-postgres-app-stack --template-file Aurora-PostgreSQL-Primary.yaml --parameter-overrides file://Aurora-PostgreSQL-parameter-us-east-1.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
+  aws cloudformation deploy \
+  --region us-east-1 \
+  --stack-name aurora-postgres-app-stack \
+  --template-file Aurora-PostgreSQL-Primary.yaml \
+  --parameter-overrides file://Aurora-PostgreSQL-parameter-us-east-1.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
   ```
 
 #### 2.2) Deploy Aurora PostgreSQL resources in Secondary Region (US-WEST-2)
@@ -86,8 +104,14 @@ with the value of <b>AuroraKmsKeyId</b> from the <b>Outputs</b> section of Cloud
 - Once the resource are created in the Primary Region. Run the below command to deploy the resources in the Secondary Region:
 
   ```bash
-  aws cloudformation deploy --region us-west-2 --stack-name aurora-postgres-app-stack --template-file Aurora-PostgreSQL-DR.yaml --parameter-overrides file://Aurora-PostgreSQL-parameter-us-west-2.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
-
+  aws cloudformation deploy \
+  --region us-west-2 \
+  --stack-name aurora-postgres-app-stack \
+  --template-file Aurora-PostgreSQL-DR.yaml \
+  --parameter-overrides file://Aurora-PostgreSQL-parameter-us-west-2.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
+  ```
 
 ### 3) Create Amazon RDS for MySQL DB Instance
 
@@ -107,7 +131,13 @@ with the value of <b>AuroraKmsKeyId</b> from the <b>Outputs</b> section of Cloud
 - Run the below command:
 
   ```bash
-  aws cloudformation deploy --region us-east-1 --stack-name rds-mysql-app-stack --template-file RDS-MySQL-Primary.yaml --parameter-overrides file://RDS-MySQL-parameter-us-east-1.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
+  aws cloudformation deploy \
+  --region us-east-1 \
+  --stack-name rds-mysql-app-stack \
+  --template-file RDS-MySQL-Primary.yaml \
+  --parameter-overrides file://RDS-MySQL-parameter-us-east-1.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
   ```
 
 #### 3.2) Deploy RDS MySQL resources in Secondary Region (US-WEST-2)
@@ -119,7 +149,13 @@ with the value of <b>AuroraKmsKeyId</b> from the <b>Outputs</b> section of Cloud
 - Run the below command to create the RDS Read Replica in us-west-2 region:
 
   ```bash
-  aws cloudformation deploy --region us-west-2 --stack-name rds-mysql-app-stack --template-file RDS-MySQL-DR.yaml --parameter-overrides file://RDS-MySQL-parameter-us-west-2.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
+  aws cloudformation deploy \
+  --region us-west-2 \
+  --stack-name rds-mysql-app-stack \
+  --template-file RDS-MySQL-DR.yaml \
+  --parameter-overrides file://RDS-MySQL-parameter-us-west-2.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
   ```
 
 
@@ -141,7 +177,13 @@ with the value of <b>AuroraKmsKeyId</b> from the <b>Outputs</b> section of Cloud
 - Run the below command:
 
   ```bash
-  aws cloudformation deploy --region us-east-1 --stack-name elasticache-ds-app-stack --template-file ElastiCache-Primary.yaml --parameter-overrides file://ElastiCache-parameter-us-east-1.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
+  aws cloudformation deploy \
+  --region us-east-1 \
+  --stack-name elasticache-ds-app-stack \
+  --template-file ElastiCache-Primary.yaml \
+  --parameter-overrides file://ElastiCache-parameter-us-east-1.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
   ```
 
 #### 4.2) Deploy ElastiCache resources in Secondary Region (US-WEST-2)
@@ -153,7 +195,13 @@ with the value of <b>AuroraKmsKeyId</b> from the <b>Outputs</b> section of Cloud
 - Run the below command to create the RDS Read Replica in us-west-2 region:
 
   ```bash
-  aws cloudformation deploy --region us-west-2 --stack-name elasticache-ds-app-stack --template-file ElastiCache-DR.yaml --parameter-overrides file://ElastiCache-parameter-us-west-2.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
+  aws cloudformation deploy \
+  --region us-west-2 \
+  --stack-name elasticache-ds-app-stack \
+  --template-file ElastiCache-DR.yaml \
+  --parameter-overrides file://ElastiCache-parameter-us-west-2.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
   ```
 
 

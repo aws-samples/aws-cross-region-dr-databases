@@ -63,7 +63,7 @@ Resources:
       DefinitionString:
         Fn::Sub: |
           {
-            "Comment": "Orchestrate Failover Stepfunction",
+            "Comment": "Orchestrate Activate Stepfunction",
             "StartAt": "Layers",
             "States": {
               "Layers": {

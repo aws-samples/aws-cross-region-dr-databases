@@ -1,10 +1,10 @@
 # DR Orchestrator Framework Overview
 
-The <b>DR Orchestrator Framework</b> automates the manual steps which are followed during the cross-region disaster recovery (DR) of your databases on AWS. It provides an approach with a centralized manifest-driven payload to trigger a single-click cross-region DR within the same account. The decision to perform a failover would still need human intervention and is out of scope for the automation.
+The [DR Orchestrator Framework](https://docs.aws.amazon.com/prescriptive-guidance/latest/automate-dr-solution-relational-database/dr-orchestrator-framework-overview.html) automates the manual steps which are followed during the cross-region disaster recovery (DR) of your databases on AWS. It provides an approach with a centralized manifest-driven payload to trigger a single-click cross-region DR within the same account. The decision to perform a failover would still need human intervention and is out of scope for the automation.
 
 With [disaster recovery strategy for databases on AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/strategy-database-disaster-recovery/welcome.html),  you could implement your DR solution for AWS databases in your organization. This solution can be automated by enabling event driven architecture which will perform the failover of the database instances. This approach has benefits like reducing  human errors due to manual coordination, providing the shortest possible RTO (recovery time objective) in some cases and facilitating repeatable testing of your DR solution.  Without automation, in the event of an outage in your primary AWS region, resources in your organization would need to manually execute steps in a run-book which include multiple processes like promoting Amazon RDS Read Replicas in the secondary AWS Region to serve as the new primary. AWS provides boto3 APIs to these actions which can form the building blocks of an automated solution for your organizations needs. 
 
-Detailed documentation of <b>DR Orchestrator Framework</b> solution is available on [Automate your DR Solution for Databases on AWS](https://apg-library.amazonaws.com/content/d246ab63-9f04-4f98-b5ad-efa34d559323)  <Needs to be update this link>
+Detailed documentation of <b>DR Orchestrator Framework</b> solution is available on [Automate your DR solution for relational databases on AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/automate-dr-solution-relational-database/introduction.html)
 
 
 ## 1) Deploy DR Orchestrator Framework
@@ -45,7 +45,7 @@ git clone https://github.com/aws-samples/aws-cross-region-dr-databases.git
 4. Create a Security Group in your VPC in both Primary (us-east-1)as well in the Secondary (us-west-2) regions:
     - sg-XXXXXXXXXXXX
  
-5. Upload <b>DR-Orchestration-artifacts</b> directory including all files to S3 buckets in both regions.
+5. Upload <b>DR-Orchestration-artifacts</b> directory inlcluding all files to S3 buckets in both regions.
 6. Ensure that you are using subnet Ids, Security Group, vpcId from the same VPC where you have deployed AWS databases (RDS, Aurora and ElastiCache). Otherwise you have to add the Subnet Ids in the Interface Endpoints created the DR Orchestrator.
 7. Ensure AWS database are available in the same AWS region
 
@@ -62,7 +62,12 @@ git clone https://github.com/aws-samples/aws-cross-region-dr-databases.git
   ```
 
   ```bash
-  aws cloudformation deploy --region us-east-1 --stack-name dr-orchestrator --template-file Orchestrator-Deployer.yaml --parameter-overrides file://Orchestrator-Deployer-parameters-us-east-1.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
+  aws cloudformation deploy \
+  --region us-east-1 --stack-name dr-orchestrator \
+  --template-file Orchestrator-Deployer.yaml \
+  --parameter-overrides file://Orchestrator-Deployer-parameters-us-east-1.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
   ```
 
 #### 1.2) Deploy DR Orchestrator resources in Secondary Region (US-WEST-2)
@@ -80,7 +85,13 @@ git clone https://github.com/aws-samples/aws-cross-region-dr-databases.git
   ```
 
   ```bash
-  aws cloudformation deploy --region us-west-2 --stack-name dr-orchestrator --template-file Orchestrator-Deployer.yaml --parameter-overrides file://Orchestrator-Deployer-parameters-us-west-2.json --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM --disable-rollback
+  aws cloudformation deploy \
+  --region us-west-2 \
+  --stack-name dr-orchestrator \
+  --template-file Orchestrator-Deployer.yaml \
+  --parameter-overrides file://Orchestrator-Deployer-parameters-us-west-2.json \
+  --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM CAPABILITY_IAM \
+  --disable-rollback
   ```
 
 ## Testing 
@@ -192,7 +203,7 @@ To perform <b>Create Secondary cluser</b>, follow the steps given below:
             "Port": "!Import dr-globaldb-cluster-mysql-port",
             "DBInstanceClass": "!Import dr-globaldb-cluster-mysql-instance-class",
             "DBSubnetGroupName": "!Import dr-globaldb-cluster-mysql-subnet-group-name",
-            "VpcSecurityGroupIds": "!Import dr-globaldb-cluster-mysql-vps-security-group-ids",
+            "VpcSecurityGroupIds": "!Import dr-globaldb-cluster-mysql-vpc-security-group-ids",
             "Engine": "!Import dr-globaldb-cluster-mysql-engine",
             "EngineVersion": "!Import dr-globaldb-cluster-mysql-engine-version",
             "KmsKeyId": "!Import dr-globaldb-cluster-mysql-KmsKeyId",
@@ -217,6 +228,42 @@ To perform <b>Create Secondary cluser</b>, follow the steps given below:
 
 Once the secondary cluster has created and if you want to fail back your global database to the original primary Region. You can perform a switchover operation when it makes the most sense for your business and workload, follow steps mentioned under <b>Test Case #1</b>
 
+**Note:** Use below payload as <b>Input</b> for *Amazon RDS Instance*
+```json
+{
+  "StatePayload": [
+    {
+      "layer": 1,
+      "resources": [
+        {
+          "resourceType": "CreateRDSReadReplica",
+          "resourceName": "Create RDS for MySQL Read Replica",
+          "parameters": {
+            "RDSInstanceIdentifier": "!Import rds-mysql-instance-identifier",
+            "TargetClusterIdentifier": "!Import rds-mysql-instance-global-arn",
+            "SourceRDSInstanceIdentifier": "!Import rds-mysql-instance-source-identifier",
+            "SourceRegion": "!Import rds-mysql-instance-SourceRegion",
+            "MultiAZ": "!Import rds-mysql-instance-MultiAZ",
+            "DBInstanceClass": "!Import rds-mysql-instance-DBInstanceClass",
+            "DBSubnetGroup": "!Import rds-mysql-instance-DBSubnetGroup",
+            "DBSecurityGroup": "!Import rds-mysql-instance-DBSecurityGroup",
+            "KmsKeyId": "!Import rds-mysql-instance-KmsKeyId",
+            "BackupRetentionPeriod": "7",
+            "MonitoringInterval": "60",
+            "StorageEncrypted": "True",
+            "EnableIAMDatabaseAuthentication": "True",
+            "DeletionProtection": "True",
+            "CopyTagsToSnapshot": "True",
+            "AutoMinorVersionUpgrade": "True",
+            "Port": "!Import rds-mysql-instance-DBPortNumber",
+            "MonitoringRoleArn": "!Import rds-mysql-instance-RDSMonitoringRole"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
 
 ### Test Case #4: Perform cross-region failover for 1) Amazon RDS for MySQL Read Replica and 2) Amazon ElastiCache for Redis Cluster together
 
